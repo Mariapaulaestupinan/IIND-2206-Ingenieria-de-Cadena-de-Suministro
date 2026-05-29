@@ -1,4 +1,4 @@
-# IIND 2206 Ingeniería de Cadena de Suministro
+<h1>IIND 2206 Ingeniería de Cadena de Suministro</h1>
 Este repositorio tiene como propósito aterrizar la teoría vista en clase mediante el desarrollo de ejemplos y casos de estudio basados en problemas reales de logística y optimización.
 
 Se abordarán temas relacionados con ruta más corta y ruteo de vehículos utilizando librerías especializadas de Python para construir, solucionar y analizar distintos escenarios desde un enfoque aplicado.
