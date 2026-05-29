@@ -419,7 +419,7 @@ plt.show()
 </details>
 <details>
 <summary> Visualizar el grafo y la ruta óptima con datos desde un archivo Excel </summary>
-El siguiente archivo contiene la estructura de red utilizada en este ejemplo. Cada fila representa un arco de la red, definido por su nodo de origen, su nodo de destino y el costo asociado al trayecto. <a href="Arcos.xlsx?raw=true" download> Descargar Arcos.xlsx</a>
+El siguiente archivo contiene la estructura de red utilizada en este ejemplo. Cada fila representa un arco de la red, definido por su nodo de origen, su nodo de destino y el costo asociado al trayecto. <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Arcos.xlsx" download>Descargar Arcos.xlsx</a>
 
 ```python
 import networkx as nx
