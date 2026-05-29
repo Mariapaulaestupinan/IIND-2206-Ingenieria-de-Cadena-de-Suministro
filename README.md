@@ -56,6 +56,16 @@ G = nx.DiGraph()
 df= pd.read_excel("Nodos.xlsx")
 G.add_nodes_from(df["Nodos"])
 ```
+##### Eliminar nodos de un grafo 
+##### Añadir arcos al grafo
+Agrega arcos al grafo especificando su nodo de origen, su nodo de destino y un peso que puede ser 
+```python
+G = nx.DiGraph()
+G.add_edge("A", "B", weight = 5)
+```
+###### Agregar un arco al grafo 
+###### Agregar una lista de arcos 
+###### Agregar arcos desde un archivo de excel
 
 
 
