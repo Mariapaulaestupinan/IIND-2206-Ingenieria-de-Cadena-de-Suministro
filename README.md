@@ -466,31 +466,6 @@ plt.show()
 </div>
 </details>
 
-#### Ejercicios 
-
-En esta sección se trabajarán ejercicios de ruta más corta que permitirán aplicar de manera integrada las distintas funcionalidades estudiadas previamente en la librería NetworkX.
-<details>
-<summary> Red de Distribución de Vacunas en Estados Unidos </summary>
-Una entidad nacional de salud pública en Estados Unidos enfrenta el reto de coordinar la distribución de vacunas entre distintas ciudades del país, considerando restricciones operativas asociadas al modo de transporte permitido a lo largo de la red y a las condiciones de refrigeración necesarias para garantizar la conservación adecuada de las vacunas durante su distribución.
-    
-**Enunciado:** <a href="Red%20de%20Distribuci%C3%B3n%20de%20Vacunas.pdf?raw=true" download>Enunciado Red de Distribución de Vacunas</a>
-
-**Base de datos:** <a href="Distribuci%C3%B3n_Vacunas.xlsx?raw=true" download>Base de Datos Red de Distribución de Vacunas</a>
-
-</details>
-<details>
-<summary>🟡 Nivel Intermedio — Próximamente</summary>
-
-> En construcción
-
-</details>
-
-<details>
-<summary>🔴 Nivel Difícil — Próximamente</summary>
-
-> En construcción
-
-</details>
 
 
 
