@@ -465,7 +465,8 @@ plt.show()
   <img src="grafo 2.png" width="600"/>
 </div>
 </details>
-#### Ejercicios 
+
+#### Ejercicios
 
 En esta sección se trabajarán ejercicios de ruta más corta que permitirán aplicar de manera integrada las distintas funcionalidades estudiadas previamente en la librería NetworkX.
 <details>
@@ -475,6 +476,210 @@ Una entidad nacional de salud pública en Estados Unidos enfrenta el reto de coo
 **Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Red%20de%20Distribuci%C3%B3n%20de%20Vacunas.pdf" download>Enunciado Red de Distribución de Vacunas</a>
 
 **Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Distribuci%C3%B3n_Vacunas.xlsx" download>Base de Datos Red de Distribución de Vacunas</a>
+
+**Solución:** 
+
+Importación de las librerías requeridas:
+
+```python
+import pandas as pd
+import networkx as nx
+```
+Parámetros globales del problema:
+
+La variable **Costo_Km** establece la tarifa asociada a cada modo de transporte, considerando un costo de **2.5 $/km para transporte terrestre** y **4.0 $/km para transporte aéreo**. Estos valores serán utilizados posteriormente para calcular el costo de recorrer cada arco de la red de distribución.
+
+Por otro lado, las variables **Origen** y **Destino** definen las ciudades de inicio y llegada entre las que se desea determinar la ruta más corta. 
+
+```python
+Costo_Km = {'Terrestre': 2.5, 'Aéreo': 4.0}
+Origen  = 'Atlanta'
+Destino = 'Las Vegas'
+```
+Cargar Datos: 
+
+Esta función permite cargar la información de la red de distribución a partir de un archivo en formato Excel. Recibe como parámetro la ruta del archivo, utiliza la función `pd.read_excel()` de la librería **Pandas** para leer los datos y retorna la información almacenada en un **DataFrame**.
+
+```python
+def cargar_datos(ruta_excel: str) -> pd.DataFrame:
+    df = pd.read_excel(ruta_excel)
+    return df
+```
+Calcular tiempo:
+
+Esta función permite calcular el tiempo total asociado a cada arco de la red de distribución. Recibe como parámetro el **DataFrame** con la información de los arcos y calcula el tiempo de recorrido dividiendo la distancia entre la velocidad. Posteriormente, incorpora el tiempo de revisión al tiempo de recorrido calculado y almacena el tiempo total resultante en una nueva columna denominada **Tiempo_Total**.
+
+```python
+def calcular_tiempo(df: pd.DataFrame) -> pd.DataFrame:
+    df['Tiempo_Total'] = (df['Distancia'] / df['Velocidad']) + df['Tiempo_Revision']
+    return df
+```
+Calcular costo:
+
+Esta función permite calcular el costo asociado a cada arco de la red de distribución utilizando la fórmula:
+
+**C<sub>ij</sub> = U<sub>m</sub> × d<sub>ij</sub> + 100 × NF<sub>ij</sub> + 200 × T<sub>ij</sub>**
+
+Posteriormente, se calcula el costo total de cada arco considerando la tarifa asociada al modo de transporte y la distancia recorrida, junto con los costos adicionales derivados del nivel de refrigeración requerido y el tiempo total de tránsito. El resultado final se almacena en una nueva columna denominada **Costo**.
+
+```python
+def calcular_costo(df: pd.DataFrame) -> pd.DataFrame:
+    df['U_m']   = df['Modo_Transporte'].map(Costo_Km)
+    df['Costo'] = (df['U_m'] * df['Distancia']
+                   + 100 * df['Nivel_Frio']
+                   + 200 * df['Tiempo_Total'])
+    return df
+```
+Construir grafo - Literal b:
+
+Esta función permite construir un grafo dirigido a partir de la información contenida en el **DataFrame**, donde cada arco representa una conexión entre una ciudad de origen y una ciudad de destino dentro de la red de distribución.
+
+Para cada registro del DataFrame se agrega un arco dirigido desde el nodo de origen hasta el nodo de destino, almacenando como atributos la distancia, el tiempo total, el modo de transporte y el nivel de refrigeración requerido. Adicionalmente, el atributo **weight** se establece utilizando el costo calculado previamente, ya que este será el valor utilizado por el algoritmo de **Dijkstra** para determinar la ruta de menor costo dentro de la red.
+
+```python
+def construir_grafo_b(df: pd.DataFrame) -> nx.DiGraph:
+    """Grafo completo. weight = costo (Dijkstra minimiza costo)."""
+    G = nx.DiGraph()
+    for _, f in df.iterrows():
+        G.add_edge(f['Origen'], f['Destino'],
+                   weight    = f['Costo'],
+                   costo     = f['Costo'],
+                   distancia = float(f['Distancia']),
+                   tiempo    = f['Tiempo_Total'],
+                   modo      = f['Modo_Transporte'],
+                   nivel_frio= int(f['Nivel_Frio']))
+    return G
+```
+Construir grafo - Literal c:
+
+Esta función permite construir un grafo dirigido incorporando las restricciones adicionales establecidas para el literal c. Primero, filtra el DataFrame conservando únicamente los arcos con nivel de frío igual a 3. Luego, a los arcos cuyo modo de transporte es terrestre se les suma una penalización de 50 al costo.  
+A diferencia del literal b, el atributo **weight** se define utilizando el tiempo total de tránsito, por lo que el algoritmo de **Dijkstra** utilizará este valor como criterio de optimización para encontrar la ruta de menor tiempo. 
+
+```python
+def construir_grafo_c(df: pd.DataFrame,
+                      penalizacion_terrestre: float = 50.0) -> nx.DiGraph:
+    """
+    Literal c:
+      - Arcos con Nivel_Frio != 3 son ELIMINADOS del grafo.
+      - Rutas terrestres llevan +50 al costo.
+      - weight = tiempo (Dijkstra minimiza tiempo).
+    """
+    df_c = df[df['Nivel_Frio'] == 3].copy()
+    df_c['Costo_c'] = df_c['Costo'].where(
+        df_c['Modo_Transporte'] != 'Terrestre',
+        df_c['Costo'] + penalizacion_terrestre
+    )
+    G = nx.DiGraph()
+    for _, f in df_c.iterrows():
+        G.add_edge(f['Origen'], f['Destino'],
+                   weight    = f['Tiempo_Total'],
+                   costo     = f['Costo_c'],
+                   distancia = float(f['Distancia']),
+                   tiempo    = f['Tiempo_Total'],
+                   modo      = f['Modo_Transporte'],
+                   nivel_frio= int(f['Nivel_Frio']))
+    return G
+```
+Calcular ruta:
+
+Esta función permite encontrar la ruta óptima entre una ciudad de origen y una ciudad de destino utilizando el algoritmo de **Dijkstra**. El criterio de optimización depende del atributo **weight** asignado previamente a cada arco del grafo, el cual puede representar el costo o el tiempo total según el caso.
+
+Si no existe una conexión posible entre los nodos seleccionados o alguno de ellos no pertenece al grafo, la función retorna un mensaje indicando que no fue posible encontrar una ruta. En caso contrario, recorre los arcos que conforman la ruta encontrada y calcula el costo, distancia y tiempo total. Finalmente, retorna la secuencia de nodos de la ruta óptima junto con las métricas calculadas.
+
+```python
+def calcular_ruta(G: nx.DiGraph, origen: str, destino: str) -> dict:
+    try:
+        ruta = nx.shortest_path(G, origen, destino, weight='weight')
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
+        print(f" No se encontró la ruta más corta entre {origen} y {destino}.")
+        return {'encontrado': False, 'ruta': [],
+                'costo': 0, 'distancia': 0, 'tiempo': 0}
+ 
+    costo = distancia = tiempo = 0.0
+    for u, v in zip(ruta, ruta[1:]):
+        a = G[u][v]
+        costo     += a['costo']
+        distancia += a['distancia']
+        tiempo    += a['tiempo']
+ 
+    return {'encontrado': True, 'ruta': ruta,
+            'costo': costo, 'distancia': distancia, 'tiempo': tiempo}
+```
+Imprimir resultado:
+
+Esta función permite presentar los resultados obtenidos de la ruta óptima. Recibe como parámetros la información de la ruta encontrada y el título correspondiente al escenario que se esta solucionando.
+
+En caso de que no exista una ruta posible bajo las restricciones establecidas, la función muestra un mensaje de error. De lo contrario, imprime la secuencia de ciudades que conforman el recorrido, la cantidad de arcos utilizados, el costo total, la distancia total recorrida y el tiempo total, expresado tanto en horas como en minutos.
+
+```python
+def imprimir_resultado(res: dict, titulo: str):
+    sep = "─" * 65
+    print(f"\n{sep}")
+    print(f"  {titulo}")
+    print(f"  {Origen}  →  {Destino}")
+    print(sep)
+    if not res['encontrado']:
+        print(" Sin ruta posible con las restricciones dadas.")
+        print(sep)
+        return
+    ruta_c = '  →  '.join(res['ruta'])
+    print(f"  Ruta (ciudades) : {ruta_c}")
+    print(f"  Arcos           : {len(res['ruta']) - 1}")
+    print(f"  Costo total     : ${res['costo']:,.2f}")
+    print(f"  Distancia total : {res['distancia']:,.1f} km")
+    print(f"  Tiempo total    : {res['tiempo']:.2f} h  ({res['tiempo']*60:.0f} min)")
+    print(sep)
+```
+Ejecución: 
+
+En este bloque se realiza la ejecución completa del modelo desarrollado. Inicialmente, se define la ruta del archivo Excel que contiene la información de la red de distribución y se cargan los datos mediante la función `cargar_datos()`.
+
+Posteriormente, se calculan los tiempos y costos asociados a cada arco utilizando las funciones `calcular_tiempo()` y `calcular_costo()`. Con esta información, se construye el grafo correspondiente al **literal b**, donde se busca la ruta de menor costo utilizando el algoritmo de Dijkstra, y se muestran los resultados obtenidos.
+
+Finalmente, se repite el mismo proceso para el **literal c**, construyendo un grafo con la restriccion del nivel de frío y la penalización para los arcos cuyo modo de transporte es terrestre. En este caso, el criterio de optimización cambia, buscando la ruta de menor tiempo.
+
+```python
+ruta = 'Distribución_Vacunas.xlsx'
+df   = cargar_datos(ruta)
+ 
+df = calcular_tiempo(df)
+df = calcular_costo(df)
+ 
+# Literal b — Menor costo
+G_b   = construir_grafo_b(df)
+res_b = calcular_ruta(G_b, Origen, Destino)
+imprimir_resultado(res_b, "Literal b — Menor costo")
+ 
+# Literal c — Menor tiempo
+G_c   = construir_grafo_c(df, penalizacion_terrestre=50.0)
+res_c = calcular_ruta(G_c, Origen, Destino)
+imprimir_resultado(res_c, "Literal c — Menor tiempo | NF=3 | +50 terrestre")
+```
+**Resultado:** 
+
+**Literal b — Menor costo**
+
+  Ruta (ciudades) : Atlanta  →  Houston  →  Phoenix  →  Las Vegas
+  
+  Arcos           : 3
+  
+  Costo total     : $16,791.55
+  
+  Distancia total : 3,434.0 km
+  
+  Tiempo total    : 25.33 h  (1520 min)
+  
+**Literal c — Menor tiempo**
+
+Ruta (ciudades) : Atlanta  →  Seattle  →  Dallas  →  Washington DC  →  Las Vegas
+
+Arcos           : 4
+
+Costo total     : $52,342.65
+
+Distancia total : 11,722.0 km
+
+Tiempo total    : 21.27 h  (1276 min)
 
 </details>
 <details>
