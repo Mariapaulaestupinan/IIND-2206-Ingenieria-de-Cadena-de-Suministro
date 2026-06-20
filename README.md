@@ -1005,6 +1005,49 @@ for hora in [6, 8, 11, 18]:
         print('No existe camino de 1 a 12 a esta hora.')
         resultados[hora] = None
 ```
+**Resultado:**
+
+Hora 6:00
+
+| Métrica | Resultado |
+|--------|----------|
+| Vías eliminadas (Obra) | V16, V3, V8 |
+| Vías eliminadas (Paso restringido) | V14, V6 |
+| Vías disponibles | 14 |
+| Ruta óptima | 1 → 3 → 4 → 5 → 6 → 12 |
+| Costo total | $22,584 |
+
+Hora 8:00
+
+| Métrica | Resultado |
+|--------|----------|
+| Vías eliminadas (Obra) | V16, V3, V8 |
+| Vías eliminadas (Pico y placa) | V1, V12, V17, V4, V6 |
+| Vías eliminadas (Evento) | V11, V13, V8 |
+| Vías disponibles | 9 |
+| Ruta óptima | No existe ruta |
+| Costo total | — |
+
+Hora 11:00
+
+| Métrica | Resultado |
+|--------|----------|
+| Vías eliminadas (Obra) | V16, V3, V8 |
+| Vías eliminadas (Evento) | V11, V13, V3, V5, V7, V8 |
+| Vías disponibles | 12 |
+| Ruta óptima | 1 → 3 → 8 → 11 → 12 |
+| Costo total | $17,371 |
+
+Hora 18:00
+
+| Métrica | Resultado |
+|--------|----------|
+| Vías eliminadas (Obra) | V16, V3, V8 |
+| Vías eliminadas (Pico y placa) | V1, V10, V12, V17, V4 |
+| Vías eliminadas (Paso restringido) | V10, V15, V16, V4 |
+| Vías disponibles | 10 |
+| Ruta óptima | 1 → 3 → 8 → 11 → 12 |
+| Costo total | $25,143 |
 </details>
 
 <details>
