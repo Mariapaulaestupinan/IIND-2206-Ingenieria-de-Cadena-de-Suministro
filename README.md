@@ -660,29 +660,25 @@ imprimir_resultado(res_c, "Literal c — Menor tiempo | NF=3 | +50 terrestre")
 ```
 **Resultado:** 
 
-**Literal b — Menor costo**
+Ruta de Menor costo
 
-  Ruta (ciudades) : Atlanta  →  Houston  →  Phoenix  →  Las Vegas
-  
-  Arcos           : 3
-  
-  Costo total     : $16,791.55
-  
-  Distancia total : 3,434.0 km
-  
-  Tiempo total    : 25.33 h  (1520 min)
-  
-**Literal c — Menor tiempo**
+| Métrica | Resultado |
+|--------|----------|
+| Ruta | Atlanta → Houston → Phoenix → Las Vegas |
+| Arcos | 3 |
+| Costo total | $16,791.55 |
+| Distancia total | 3,434.0 km |
+| Tiempo total | 25.33 h (1520 min) |
 
-Ruta (ciudades) : Atlanta  →  Seattle  →  Dallas  →  Washington DC  →  Las Vegas
+Ruta de Menor tiempo
 
-Arcos           : 4
-
-Costo total     : $52,342.65
-
-Distancia total : 11,722.0 km
-
-Tiempo total    : 21.27 h  (1276 min)
+| Métrica | Resultado |
+|--------|----------|
+| Ruta | Atlanta → Seattle → Dallas → Washington DC → Las Vegas |
+| Arcos | 4 |
+| Costo total | $52,342.65 |
+| Distancia total | 11,722.0 km |
+| Tiempo total | 21.27 h (1276 min) |
 
 </details>
 <details>
@@ -1052,10 +1048,283 @@ Hora 18:00
 
 <details>
 <summary> Red de distribución energética </summary>
+Hydrogen Logistics North America (HLNA) es una compañía de logística energética que coordina la distribución de hidrógeno verde y combustibles criogénicos (oxígeno e hidrógeno líquidos) entre centros de producción, plantas industriales y puertos de exportación distribuidos a lo largo de Estados Unidos y Canadá. Recientemente la empresa firmó un contrato para entregar un cargamento de 35 toneladas de hidrógeno verde desde su planta principal en Vancouver hacia el puerto de Chicago, donde será embarcado hacia Europa. Estos productos son altamente sensibles: requieren mantenimiento estricto de presión y temperatura, son inflamables y deben moverse por corredores logísticos certificados.
+    
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20Red%20de%20distribuci%C3%B3n%20energ%C3%A9tica.pdf" download>Enunciado Red de distribución energética</a>
 
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Datos%20red%20de%20distribuci%C3%B3n%20energ%C3%A9tica.xlsx" download>Datos red de distribución energética</a>
 
-> En construcción
+**Solución:** 
 
+Importación de las librerías requeridas:
+
+```python
+import pandas as pd
+import networkx as nx
+```
+Parámetros del modelo:
+
+En primer lugar, definimos la ruta del archivo, junto con las ciudades de origen y destino, y el volumen de carga a transportar en toneladas.
+
+Posteriormente, se definen los parámetros utilizados en la formulación del costo. El diccionario **Um** define el costo asociado por kilómetro para cada modo de transporte, **alfa** contiene los factores de ajuste asociados al tipo de vía y  **gamma** almacena los recargos porcentuales asociados a cada modo de transporte, los cuales serán aplicados en el último literal del ejercicio para ajustar el costo final del recorrido.
+
+Adicionalmente, se define el costo del operador (**co**), el cual permite incorporar el costo asociado al tiempo de operación dentro del cálculo del costo total de transporte.
+
+```python
+Excel_Path = "Datos red de distribución energética.xlsx"
+
+Origen = "Vancouver"
+Destino = "Chicago"
+Carga = 35  # toneladas
+
+# Costo por kilómetro según modo de transporte (USD/Km)
+Um = {
+    "Terrestre": 4.20,
+    "Ferroviario": 2.80,
+    "Fluvial": 1.90
+}
+
+# Factor de ajuste por tipo de vía
+alfa = {
+    "Interestatal": 1.00,
+    "Federal": 1.10,
+    "Secundaria": 1.25,
+    "Industrial": 0.95
+}
+
+# Costo por hora del operador (USD/h)
+co = 38.0
+
+# Recargo porcentual por modo de transporte
+gamma = {
+    "Terrestre": 0.20,
+    "Ferroviario": 0.10,
+    "Fluvial": 0.30
+}
+```
+Carga de datos:
+
+Este bloque permite cargar la información de la red logística desde el archivo Excel. Para ello, se lee la hoja **Rutas_Logistica** y se almacena su contenido en un **DataFrame**, donde cada fila representa una ruta disponible con sus respectivas características. 
+
+```python
+df = pd.read_excel(Excel_Path, sheet_name="Rutas_Logistica")
+```
+Construcción del grafo:
+
+Este bloque permite construir el grafo dirigido de la red logística a partir de la información contenida en el **DataFrame**. Para cada registro de la tabla se extraen las características de la ruta, como nodo de origen, nodo de destino, distancia, velocidad promedio, tiempo de aduana, modo de transporte, capacidad máxima, tipo de vía, nivel de riesgo, emisiones, peaje e índice de confiabilidad.
+
+Antes de agregar cada ruta al grafo, se validan las restricciones operativas establecidas en el problema. En primer lugar, se verifica que la capacidad máxima del arco sea suficiente para transportar la carga definida. Posteriormente, se descartan aquellas rutas que tengan una zona de riesgo alta y sean una vía secundaria, y finalmente se exige que el índice de confiabilidad de la ruta sea mayor o igual a 0.70. Si alguna condición no se cumple, la ruta es descartada mediante y no se incorpora al grafo.
+
+Para las rutas que cumplen con todas las restricciones operativas, se calcula inicialmente el tiempo total de tránsito del arco, considerando tanto el tiempo requerido para recorrer la distancia de la ruta como el tiempo adicional asociado al proceso de aduana. 
+
+Posteriormente, se determina el costo total de la ruta aplicando la fórmula establecida en el enunciado. Este cálculo integra el costo por kilómetro ajustado según el modo de transporte y el tipo de vía, el costo del operador asociado al tiempo total de operación, los costos fijos de peaje y el costo adicional relacionado con las emisiones de CO₂ generadas durante el recorrido.
+
+Finalmente, cada ruta válida se agrega al grafo como una arista dirigida, almacenando como atributos la distancia, el tiempo total, el costo calculado y el modo de transporte. 
+
+```python
+G = nx.DiGraph()
+
+for _, row in df.iterrows():
+
+    origen = row["Origen"]
+    destino = row["Destino"]
+    dist = float(row["Distancia_Km"])
+    vel = float(row["Velocidad_Promedio_KmH"])
+    t_aduana = float(row["Tiempo_Aduana_H"])
+    modo = row["Modo_Transporte"]
+    cap = float(row["Capacidad_Maxima_Ton"])
+    via = row["Tipo_Via"]
+    riesgo = row["Zona_Riesgo"]
+    emision = float(row["Emision_CO2_Kg/Km"])
+    peaje = float(row["Peaje_USD"])
+    confiab = float(row["Indice_Confiabilidad"])
+
+    # ------ Restricciones operativas ------
+    # 1) Capacidad del arco >= volumen de la carga
+    if cap < Carga:
+        continue
+
+    # 2) No usar arcos que sean Riesgo Alto y vía Secundaria
+    if riesgo == "Alta" and via == "Secundaria":
+        continue
+
+    # 3) Confiabilidad >= 0.70
+    if confiab < 0.70:
+        continue
+
+    # ------ Tiempo total del arco ------
+    # tij = tiempo de viaje + tiempo de aduana
+    tij = (dist / vel) + t_aduana
+
+    # ------ Costo del arco según fórmula ------
+    # cij = Um * alfa_via * dij + co * tij + Peajeij + 0.12 * eij
+    cij = Um[modo] * alfa[via] * dist + co * tij + peaje + 0.12 * emision
+
+    # ------ Agregar arco al grafo ------
+    G.add_edge(
+        origen,
+        destino,
+        distancia=dist,
+        tiempo=tij,
+        costo=cij,
+        modo=modo
+    )
+```
+Ruta de menor costo:
+
+Utiliza el algoritmo de **Dijkstra** sobre el grafo construido para encontrar la ruta óptima de menor costo entre la ciudad de origen (**Vancouver**) y la ciudad de destino (**Chicago**). 
+
+Una vez obtenida la secuencia de nodos que conforman la ruta óptima, se recorren los arcos correspondientes dentro del grafo para calcular el costo total, la distancia total y el tiempo total de tránsito.
+
+Finalmente, se imprime la ruta encontrada, junto con los valores calculados de costo, distancia y tiempo.
+
+```python
+ruta_costo = nx.shortest_path(G, source=Origen, target=Destino, weight="costo")
+
+# Acumular métricas a lo largo de la ruta
+costo_total_2 = 0.0
+distancia_total_2 = 0.0
+tiempo_total_2 = 0.0
+
+for k in range(len(ruta_costo) - 1):
+    u = ruta_costo[k]
+    v = ruta_costo[k + 1]
+    arco = G[u][v]
+
+    costo_total_2 += arco["costo"]
+    distancia_total_2 += arco["distancia"]
+    tiempo_total_2 += arco["tiempo"]
+
+print("=" * 70)
+print("PUNTO 2 - RUTA DE MENOR COSTO (Vancouver -> Chicago)")
+print("=" * 70)
+
+print("Ruta:")
+print(" -> ".join(ruta_costo))
+
+print()
+
+print(f"Costo total:      {costo_total_2:,.2f} USD")
+print(f"Distancia total:  {distancia_total_2:,.2f} Km")
+print(f"Tiempo total:     {tiempo_total_2:,.2f} h")
+
+print()
+```
+Construcción del grafo con recargo: 
+
+Construye un nuevo grafo dirigido incorporando un ajuste adicional sobre los costos de transporte. La estructura del grafo mantiene las mismas restricciones operativas definidas previamente: capacidad suficiente para transportar la carga, rutas que no presenten un nivel de riesgo alto y cuyo tipo de vía no corresponda a una vía secundaria, y un índice de confiabilidad mínimo requerido.
+
+Para cada ruta que cumple las restricciones, se calcula inicialmente el costo base del arco utilizando la misma formula del enunciado, considerando el modo de transporte, el tipo de vía, la distancia recorrida, el tiempo de operación, los peajes y el componente asociado a emisiones de CO₂.
+
+Posteriormente, se aplica un recargo porcentual según el modo de transporte mediante el factor **gamma**, ajustando el costo del arco.
+
+Este incremento representa el sobrecosto asociado al transporte urgente del medicamento biotecnológico. 
+
+```python
+G_t = nx.DiGraph()
+
+for _, row in df.iterrows():
+
+    origen = row["Origen"]
+    destino = row["Destino"]
+    dist = float(row["Distancia_Km"])
+    vel = float(row["Velocidad_Promedio_KmH"])
+    t_aduana = float(row["Tiempo_Aduana_H"])
+    modo = row["Modo_Transporte"]
+    cap = float(row["Capacidad_Maxima_Ton"])
+    via = row["Tipo_Via"]
+    riesgo = row["Zona_Riesgo"]
+    emision = float(row["Emision_CO2_Kg/Km"])
+    peaje = float(row["Peaje_USD"])
+    confiab = float(row["Indice_Confiabilidad"])
+
+    # 1) Capacidad del arco >= volumen de la carga
+    if cap < Carga:
+        continue
+
+    # 2) No usar arcos que sean Riesgo Alto y vía Secundaria
+    if riesgo == "Alta" and via == "Secundaria":
+        continue
+
+    # 3) Confiabilidad >= 0.70
+    if confiab < 0.70:
+        continue
+
+    tij = (dist / vel) + t_aduana
+
+    cij = Um[modo] * alfa[via] * dist + co * tij + peaje + 0.12 * emision
+
+    # Costo con recargo según modo de transporte
+    cij_recargo = cij * (1 + gamma[modo])
+
+    G_t.add_edge(
+        origen,
+        destino,
+        distancia=dist,
+        tiempo=tij,
+        costo=cij_recargo,
+        modo=modo
+    )
+```
+Ruta de menor tiempo:
+
+Utiliza el algoritmo de **Dijkstra** sobre el grafo construido para encontrar la ruta óptima de menor tiempo entre la ciudad de origen (**Vancouver**) y la ciudad de destino (**Chicago**). 
+
+Una vez obtenida la secuencia de nodos que conforman la ruta óptima, se recorren los arcos correspondientes dentro del grafo para calcular el costo total, la distancia total y el tiempo total de tránsito.
+
+Finalmente, se imprime la ruta encontrada, junto con los valores calculados de costo, distancia y tiempo.
+
+```python
+# Ruta de menor tiempo
+ruta_tiempo = nx.shortest_path(G_t, source=Origen, target=Destino, weight="tiempo")
+
+costo_total_3 = 0.0
+distancia_total_3 = 0.0
+tiempo_total_3 = 0.0
+
+for k in range(len(ruta_tiempo) - 1):
+    u = ruta_tiempo[k]
+    v = ruta_tiempo[k + 1]
+
+    arco = G_t[u][v]
+
+    costo_total_3 += arco["costo"]
+    distancia_total_3 += arco["distancia"]
+    tiempo_total_3 += arco["tiempo"]
+
+print("=" * 70)
+print("PUNTO 3 - RUTA DE MENOR TIEMPO (Vancouver -> Chicago) con recargo")
+print("=" * 70)
+
+print("Ruta:")
+print(" -> ".join(ruta_tiempo))
+
+print()
+
+print(f"Tiempo total:     {tiempo_total_3:,.2f} h")
+print(f"Costo total:      {costo_total_3:,.2f} USD")
+print(f"Distancia total:  {distancia_total_3:,.2f} Km")
+
+print("=" * 70)
+```
+**Resultado:**
+Ruta de menor costo (Vancouver → Chicago)
+
+| Métrica | Valor |
+|--------|------|
+| Ruta | Vancouver → Toronto → Chicago |
+| Costo total | 18,518.88 USD |
+| Distancia total | 5,152.00 Km |
+| Tiempo total | 67.26 h |
+
+Ruta de menor tiempo (Vancouver → Chicago)
+
+| Métrica | Valor |
+|--------|------|
+| Ruta | Vancouver → Seattle → Salt Lake City → Denver → Kansas City → Chicago |
+| Costo total | 22,627.49 USD |
+| Distancia total | 4,278.40 Km |
+| Tiempo total | 66.42 h |
 </details>
 
 
