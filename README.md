@@ -1412,7 +1412,7 @@ En esta sección se desarrollan ejercicios de ruta más corta que requieren impl
 <summary> Red de Distribución RiskShield </summary>
 RiskShield Logistics es una empresa especializada en el transporte de sustancias químicas peligrosas que debe entregar un cargamento de peróxido de hidrógeno industrial desde Seattle hasta Houston. La empresa opera una red de rutas terrestres y ferroviarias a lo largo de Estados Unidos, y debe encontrar la ruta de menor costo garantizando que la exposición al riesgo operativo a lo largo del recorrido no supere los límites establecidos para cada ciudad intermedia.
     
-**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Red%20de%20Distribuci%C3%B3n%20RiskShield.pdf" download>Enunciado Red de Distribución RiskShield</a>
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20Red%20de%20Distribuci%C3%B3n%20RiskShield.pdf" download>Enunciado Red de Distribución RiskShield</a>
 
 **Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_RiskShield.xlsx" download>red_RiskShield</a>
 
