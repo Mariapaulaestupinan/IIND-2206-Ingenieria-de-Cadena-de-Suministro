@@ -684,7 +684,7 @@ Ruta de Menor tiempo
 <details>
 <summary> Red Vial en Bogotá </summary>
 Una empresa de mensajería urbana en Bogotá necesita calcular la ruta de menor costo para un mensajero en moto que parte desde la intersección 1 y debe llegar a la intersección 12. El costo de cada tramo no depende únicamente de la distancia recorrida, sino también de la velocidad del tráfico según la hora del día, la presencia de peajes en la vía y la cantidad de semáforos.
-
+<br>
 
 **Nota:** Este ejercicio idealmente debería resolverse mediante una implementación propia del algoritmo de Dijkstra, debido a que el costo real de una ruta depende del estado dinámico de la red durante el recorrido. En particular, para calcular correctamente el costo de una alternativa sería necesario conocer la hora estimada de llegada a cada nodo, ya que el factor de congestión de una vía puede cambiar dependiendo del momento en que sea utilizada. Adicionalmente, la disponibilidad de las vías debe evaluarse dinámicamente, considerando posibles bloqueos o restricciones que puedan activarse durante el recorrido.
 
