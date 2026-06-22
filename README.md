@@ -1414,7 +1414,7 @@ RiskShield Logistics es una empresa especializada en el transporte de sustancias
     
 **Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20Red%20de%20Distribuci%C3%B3n%20RiskShield.pdf" download>Enunciado Red de Distribución RiskShield</a>
 
-**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_RiskShield.xlsx" download>red_RiskShield</a>
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_RiskShield.xlsx" download>Red RiskShield</a>
 
 **Solución:** 
 Importación de librerías requeridas:
