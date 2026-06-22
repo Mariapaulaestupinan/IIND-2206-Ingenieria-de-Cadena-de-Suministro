@@ -2279,7 +2279,7 @@ El objetivo principal es minimizar una función de costo, que puede estar asocia
 
 - [PyVRP](#pyvrp)
   - [Funciones principales PyVRP](#funciones-principales-pyvrp)
-  - [Ejercicios NetworkX](#ejercicios-networkx)
+  - [Ejercicios PyVRP](#ejercicios-networkx)
 
 ### PyVRP
 
