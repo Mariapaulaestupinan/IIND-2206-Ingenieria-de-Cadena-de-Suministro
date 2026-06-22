@@ -2264,3 +2264,210 @@ for hora in [6, 8, 11, 18]:
 | 18:00 | 1 → 3 → 8 → 11 → 12 | $25,143 pesos |
 
 </details>
+
+## Ruteo de vehículos
+
+--
+
+En esta sección se abordarán problemas de ruteo de vehículos utilizando la librería **PyVRP**.
+
+A diferencia de los problemas de ruta más corta, donde el objetivo es encontrar el camino óptimo entre dos nodos de una red, los problemas de ruteo de vehículos buscan determinar el conjunto de rutas que debe seguir una flota de vehículos para atender a un grupo de clientes.
+
+El objetivo principal es minimizar una función de costo, que puede estar asociada a la distancia recorrida, el tiempo de operación, el costo total de transporte o una combinación de estos criterios. Para ello, se consideran restricciones operativas, como la capacidad máxima de los vehículos, las ventanas de tiempo de los clientes, la cantidad de vehículos disponibles y la compatibilidad de los vehículos con los clientes.
+
+### Contenido
+
+- [PyVRP](#pyvrp)
+  - [Funciones principales](#funciones-principales)
+  - [Ejercicios NetworkX](#ejercicios-networkx)
+
+### PyVRP
+
+**PyVRP** es una librería de optimización de código abierto especializada en la resolución de problemas de ruteo de vehículos (*Vehicle Routing Problems, VRP*).
+
+Internamente implementa el algoritmo de **búsqueda local iterada (ILS, por sus siglas en inglés)**, el cual parte de una solución inicial y la mejora de manera progresiva mediante un proceso iterativo. En cada iteración combina dos mecanismos: las perturbaciones, que modifican la solución actual para explorar nuevas regiones del espacio de búsqueda y evitar quedar atrapado en óptimos locales; y la busqueda local, que refinan las soluciones generadas para lograr mejoras adicionales. 
+
+Entre las principales funcionalidades de `PyVRP` se encuentran:
+
+- Capacidad de los vehículos.
+- Ventanas de tiempo para atención de clientes.
+- Flotas homogéneas y heterogéneas.
+- Múltiples depósitos.
+- Visitas opcionales a clientes.
+- Compatibilidad de vehículos
+- Distancia máxima de recorrido
+
+Estas características permiten modelar problemas reales de distribución y logística, donde las decisiones de ruteo deben considerar múltiples restricciones operativas y criterios de eficiencia.
+
+#### Funciones principales
+ 
+En esta sección se presentan las funciones y clases principales de PyVRP necesarias para modelar y resolver problemas de ruteo de vehículos. Se cubrirá la instalación de la librería, la importación de los módulos necesarios, la creación del modelo y la definición de todos los atributos.
+ 
+---
+
+<details>
+<summary> Instalación </summary>
+ 
+PyVRP puede instalarse directamente desde el administrador de paquetes de Python. Basta con ejecutar el siguiente comando en la terminal:
+ 
+```bash
+pip install pyvrp
+```
+</details>
+
+<details>
+<summary> Importación de librerías </summary>
+ 
+Una vez instalada la librería, se importan los módulos necesarios. `Model` es la clase principal con la que se construye el problema.
+ 
+```python
+from pyvrp import Model
+```
+</details>
+
+<details>
+<summary> Creación del modelo </summary>
+ 
+`Model` es la clase central de PyVRP. Es el objeto sobre el que se construye el problema completo: se le agregan clientes, depósitos, vehículos y arcos. Todo el problema queda contenido en una única instancia de esta clase antes de ser enviado al solver.
+ 
+```python
+m = Model()
+```
+</details> 
+
+<details>
+<summary> Clientes </summary>
+ 
+Un cliente representa cada punto de la red que debe ser visitado por un vehículo. Se agrega al modelo usando el método `add_client()`, que acepta los siguientes parámetros:
+ 
+| Parámetro | Tipo | Obligatorio | Descripción |
+|---|---|---|---|
+| `x` | float | Si | Coordenada x de la ubicación del cliente |
+| `y` | float | Si | Coordenada y de la ubicación del cliente |
+| `delivery` | int | No | Unidades que el cliente solicita del depósito. Por defecto 0 |
+| `pickup` | int | No | Unidades que el cliente devuelve al depósito. Por defecto 0 |
+| `service_duration` | int | No | Tiempo que tarda el vehículo en atender al cliente antes de continuar con el recorrido. Por defecto 0 |
+| `tw_early` | int | No | Inicio de la ventana de atención del cliente. Por defecto 0 |
+| `tw_late` | int | No |Tiempo máximo permitido para iniciar el servicio al cliente. Sin restricción si no se especifica |
+| `release_time` | int | No | Momento más temprano en el que el vehículo puede partir del depósito hacia este cliente. Por defecto 0 |
+| `prize` | int | No | Ingreso que se obtiene al visitar este cliente. Relevante cuando la visita es opcional. Por defecto 0 |
+| `required` | bool | No | Indica si el cliente debe ser visitado obligatoriamente. Por defecto `True` |
+| `name` | str | No | Nombre descriptivo del cliente. Por defecto cadena vacía |
+ 
+> **Nota:** Los parámetros de tiempo (`service_duration`, `tw_early`, `tw_late`, `release_time`) deben expresarse en **minutos** o **segundos**.
+
+<details>
+<summary> Ejemplo 1 — Crear un cliente con coordenadas x, y </summary>
+   
+La forma más directa de agregar un cliente es proporcionando sus coordenadas geográficas. A continuación se crea un cliente ubicado en las coordenadas (-74.0721, 4.7110), con una demanda de 15 unidades y una ventana de tiempo entre las 8:00 y las 12:00. Dado que PyVRP requiere que los tiempos sean enteros, la ventana de tiempo se convierte a minutos: 8:00 corresponde al minuto 480 y las 12:00 al minuto 720 contados desde la medianoche. El tiempo de servicio es de 10 minutos.
+ 
+```python
+m = Model()
+ 
+# Ventana de tiempo en horas
+tw_early_h = 8    # 8:00
+tw_late_h  = 12   # 12:00
+ 
+# Conversión a minutos (PyVRP requiere enteros)
+tw_early_min = tw_early_h * 60   # 480
+tw_late_min  = tw_late_h  * 60   # 720
+ 
+m.add_client(
+    x                = -74.0721,
+    y                = 4.7110,
+    delivery         = 15,
+    service_duration = 10,
+    tw_early         = tw_early_min,
+    tw_late          = tw_late_min,
+    name             = "Cliente_1"
+)
+```
+</details>
+
+<details>
+<summary> Ejemplo 2 — Crear un cliente sin coordenadas x, y </summary>
+
+Cuando la red se representa mediante una matriz de distancias en lugar de coordenadas en el plano, el cliente no tiene una posición geográfica definida. En ese caso, en lugar de `x` e `y`, se usa el parámetro `location`, que corresponde al índice de la fila y columna del cliente dentro de la matriz de distancias. A continuación se crea un cliente que corresponde al índice 1 de la matriz, con una demanda de 20 unidades, una ventana de tiempo entre las 9:00 y las 14:00, y un tiempo de servicio de 15 minutos.
+ 
+```python
+m = Model()
+ 
+# Ventana de tiempo en horas
+tw_early_h = 9    # 9:00
+tw_late_h  = 14   # 14:00
+ 
+# Conversión a minutos (PyVRP requiere enteros)
+tw_early_min = tw_early_h * 60   # 540
+tw_late_min  = tw_late_h  * 60   # 840
+ 
+m.add_client(
+    location         = 1,
+    delivery         = 20,
+    service_duration = 15,
+    tw_early         = tw_early_min,
+    tw_late          = tw_late_min,
+    name             = "Cliente_1"
+)
+```
+ 
+> **Nota:** La matriz de distancias debe ser cuadrada y tanto las filas como las columnas deben seguir el mismo orden. El índice 0 debe corresponder al depósito y los índices siguientes a cada cliente en el mismo orden en que fueron agregados al modelo. Si las filas y columnas no siguen el mismo orden, o si el orden no coincide con el de los clientes en el modelo, las distancias calculadas serán incorrectas.
+</details>
+
+<details>
+<summary> Ejemplo 3 — Crear un cliente sin coordenadas usando x=0, y=0 </summary>
+
+Una alternativa más sencilla cuando se trabaja con matriz de distancias es asignar `x=0` e `y=0` a todos los clientes como valores artificiales. De esta forma se cumple con la firma del método sin necesidad de coordenadas reales, y las distancias entre nodos quedan definidas exclusivamente por la matriz que se provee al modelo. Esta opción es útil cuando las distancias reales ya están precalculadas y no se quiere depender de coordenadas geográficas.
+ 
+```python
+m = Model()
+ 
+# Ventana de tiempo en horas
+tw_early_h = 9    # 9:00
+tw_late_h  = 14   # 14:00
+ 
+# Conversión a minutos (PyVRP requiere enteros)
+tw_early_min = tw_early_h * 60   # 540
+tw_late_min  = tw_late_h  * 60   # 840
+ 
+m.add_client(
+    x                = 0,
+    y                = 0,
+    delivery         = 20,
+    service_duration = 15,
+    tw_early         = tw_early_min,
+    tw_late          = tw_late_min,
+    name             = "Cliente_1"
+)
+```
+ 
+> **Nota:** Al usar coordenadas artificiales `x=0, y=0`, es obligatorio proveer la matriz de distancias al modelo. Si no se hace, PyVRP calculará distancias desde el origen, lo que producirá resultados incorrectos.
+
+</details>
+
+<details>
+<summary> Ejemplo 4 — Cargar clientes desde un archivo Excel </summary>
+  
+Cuando el número de clientes es grande, la forma más práctica es cargarlos desde un archivo Excel. Imaginemos que tenemos un archivo llamado `clientes_pyvrp.xlsx` con la siguiente estructura:
+
+Donde cada fila representa un cliente con sus coordenadas, demanda en unidades, ventana de tiempo de atención en minutos y tiempo de servicio en minutos. A continuación se muestra cómo leer este archivo y agregar todos los clientes al modelo de forma automática.
+ 
+```python
+m = Model()
+ 
+df = pd.read_excel("clientes_pyvrp.xlsx", sheet_name="Clientes")
+ 
+for _, row in df.iterrows():
+    m.add_client(
+        x                = int(row["x"]),
+        y                = int(row["y"]),
+        delivery         = int(row["demanda"]),
+        service_duration = int(row["service_duration"]),
+        tw_early         = int(row["tw_early"]),
+        tw_late          = int(row["tw_late"]),
+        name             = str(row["nombre"])
+    )
+
+print(f"Clientes cargados: {len(m.locations)}")
+```
+</details>
+</details>
