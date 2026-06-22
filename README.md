@@ -1852,3 +1852,16 @@ else:
 | Tiempo total estimado| 35.80 h |
 | Transbordos detectados| Tapachula → Cartagena (Ferroviario → Fluvial) |
 | Recargo por transbordo| +$120 USD |
+</details>
+
+<details>
+<summary> Red vial Bogotá Dinamica </summary>
+Una empresa de mensajería urbana en Bogotá debe encontrar la ruta de menor costo para un mensajero en moto que parte desde la intersección 1 y debe llegar a la intersección 12. El desafío de este ejercicio va más allá de encontrar el camino más corto en una red estática, ya que la disponibilidad de cada vía y su costo dependen de la hora en que el mensajero llega a cada nodo. Esto significa que una vía que está disponible al inicio del recorrido puede estar bloqueada más adelante si el mensajero llega a ella durante un horario restringido, y el costo de transitarla varía según el nivel de congestión en ese momento. Por esta razón, la validez y el costo de cada arco solo pueden determinarse en el momento exacto en que el mensajero llega al nodo desde el que inicia ese tramo.
+    
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20Red%20de%20Distribuci%C3%B3n%20FreshChain.pdf" download>Enunciado Red de Distribución FreshChain</a>
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_FreshChain.xlsx" download>Red FreshChain</a>
+
+**Solución:**
+
+</details>
