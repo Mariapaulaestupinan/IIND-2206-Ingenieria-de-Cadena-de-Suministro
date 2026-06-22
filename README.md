@@ -2719,6 +2719,7 @@ m.add_vehicle_type(
     profile            = perfil_camion,
     name               = "Camion_Grande"
 )
+```
 </details>
 
 <details>
