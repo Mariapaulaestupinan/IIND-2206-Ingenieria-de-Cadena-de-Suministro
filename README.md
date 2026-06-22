@@ -1593,7 +1593,7 @@ FreshChain Logistics es una empresa especializada en la distribución de product
     
 **Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20Red%20de%20Distribuci%C3%B3n%20FreshChain.pdf" download>Enunciado Red de Distribución FreshChain</a>
 
-**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_FreshChain.xlsx" download>red_FreshChain</a>
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/red_FreshChain.xlsx" download>Red FreshChain</a>
 
 **Solución:** 
 
