@@ -1640,7 +1640,7 @@ for _, row in df.iterrows():
     pea  = float(row["Peaje_USD"])
 
     tij = dist / vel
-    cij = Um[modo] * dist + CO * tij + pea
+    cij = Um[modo] * dist + Co * tij + pea
 
     if o not in grafo:
         grafo[o] = []
