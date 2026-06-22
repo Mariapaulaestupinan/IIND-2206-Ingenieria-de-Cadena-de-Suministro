@@ -1552,8 +1552,8 @@ nodo_actual = Destino
 
 while nodo_actual is not None:
 
-    ruta.insert(0, nodo_actual)              # Línea 26
-    nodo_actual = predecesor[nodo_actual]    # Línea 27
+    ruta.insert(0, nodo_actual)              
+    nodo_actual = predecesor[nodo_actual]    
 ```
 Resultados del algoritmo
 
@@ -1753,7 +1753,7 @@ while cola_prioridad:
                 )
             )
 ```
-Selección del estado destino óptimo:
+Selección del estado de destino óptimo:
 
 Como el destino puede haberse alcanzado a través de distintos modos de transporte, pueden existir múltiples estados `(Cartagena, modo)` dentro del diccionario `costo`, cada uno con un costo acumulado diferente dependiendo de la ruta recorrida y los transbordos realizados.
 
@@ -1841,3 +1841,4 @@ else:
 
     print("=" * 65)
 ```
+**Resultado obtenido:**
