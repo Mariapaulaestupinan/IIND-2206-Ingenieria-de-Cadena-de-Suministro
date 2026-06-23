@@ -2279,7 +2279,7 @@ El objetivo principal es minimizar una función de costo, que puede estar asocia
 
 - [PyVRP](#pyvrp)
   - [Funciones principales PyVRP](#funciones-principales-pyvrp)
-  - [Ejercicios PyVRP](#ejercicios-networkx)
+  - [Ejercicios PyVRP](#ejercicios-pyvrp)
 
 ### PyVRP
 
@@ -2785,3 +2785,289 @@ Tipos de vehículos cargados: 5
 
 </details>
 </details>
+
+<details>
+<summary> Arcos </summary>
+
+Un arco conecta dos ubicaciones de la red e indica la distancia y duración del recorrido entre ellas. Se agrega al modelo usando el método `add_edge()`, que acepta los siguientes parámetros:
+ 
+| Parámetro | Tipo | Obligatorio | Descripción |
+|---|---|---|---|
+| `frm` | Client \| Depot | Si | Ubicación de origen del arco |
+| `to` | Client \| Depot | Si | Ubicación de destino del arco |
+| `distance` | int | Si | Distancia del recorrido |
+| `duration` | int | No | Duración del recorrido. Por defecto 0 |
+| `profile` | Profile | No | Perfil de enrutamiento al que pertenece el arco |
+ 
+> **Importante:** Los arcos deben agregarse para **todos los pares ordenados** de ubicaciones del modelo, incluyendo los arcos de una ubicación a sí misma con `distance=0` y `duration=0`. Si se omite algún par, el modelo puede quedar infactible.
+ 
+Aproximación de enteros
+ 
+PyVRP requiere que `distance` y `duration` sean enteros. Dependiendo del origen de los datos, esto puede requerir distintos tratamientos:
+ 
+- **Coordenadas geográficas (latitud y longitud):** la distancia euclidiana entre dos puntos cercanos es del orden de `0.01` grados, por lo que al aplicar `int()` directamente el resultado es `0`. En este caso es obligatorio escalar las distancias y duraciones multiplicándolas por un factor suficientemente grande antes de convertirlas a entero.
+- **Matriz de distancias o duraciones con decimales:** si los valores de la matriz son decimales, aplicar `int()` directamente introduce un error de truncamiento. Si los valores son suficientemente grandes (por ejemplo, distancias en kilómetros enteros), el truncamiento es despreciable. Si son pequeños o requieren precisión, se deben escalar también.
+  
+En todos los casos donde se escale, es necesario escalar de forma consistente todos los tiempos y costos del modelo (`tw_early`, `tw_late`, `service_duration`, `shift_duration`, `unit_distance_cost`, `unit_duration_cost`, `fixed_cost`) por el mismo factor, y desescalar los resultados al reportar.
+
+<details>
+<summary> Ejemplo 1 — Distancia euclidiana calculada desde coordenadas </summary>
+ 
+Los clientes tienen coordenadas geográficas `x` e `y` almacenadas en un archivo Excel. La distancia entre cada par de ubicaciones se calcula con la fórmula euclidiana y la duración se obtiene dividiendo esa distancia entre la velocidad promedio del vehiculo. Ambos valores se redondean a entero con `int()`.
+ 
+```python
+import math
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+ 
+m = Model()
+perfil = m.add_profile()
+ 
+df = pd.read_excel("arcos_clientes_coordenadas.xlsx", sheet_name="Clientes")
+ 
+# ── Depósito ──────────────────────────────────────────────────────
+fila_dep  = df[df["nombre"] == "Deposito"].iloc[0]
+depot = m.add_depot(
+    x    = fila_dep["x"],
+    y    = fila_dep["y"],
+    tw_early = int(row["tw_early (min)"]),
+    tw_late = int(row["tw_late (min)"]),
+    service_duration = int(row["service_duration (min)"]),
+    name = fila_dep["nombre"]
+)
+ 
+# ── Clientes ──────────────────────────────────────────────────────
+for _, row in df[df["nombre"] != "Deposito"].iterrows():
+    m.add_client(
+        x                = row["x"],
+        y                = row["y"],
+        delivery         = int(row["delivery"]),
+        tw_early         = int(row["tw_early (min)"]),
+        tw_late          = int(row["tw_late (min)"]),
+        service_duration = int(row["service_duration (min)"]),
+        name             = str(row["nombre"])
+    )
+ 
+# ── Tipo de vehículo ──────────────────────────────────────────────
+m.add_vehicle_type(
+    num_available      = 2,
+    capacity           = 50,
+    tw_early           = 480,
+    tw_late            = 1080,
+    shift_duration     = 480,
+    unit_distance_cost = 3,
+    unit_duration_cost = 2,
+    profile            = perfil,
+    name               = "Vehiculo"
+)
+ 
+# ── Arcos: distancia euclidiana y duración desde velocidad ────────
+
+VELOCIDAD = 40 # Km/h
+ 
+for frm in m.locations:
+    for to in m.locations:
+        dist_real = math.sqrt((frm.x - to.x)**2 + (frm.y - to.y)**2)
+        dur_min   = (dist_real / VELOCIDAD) * 60
+        m.add_edge(frm, to,
+                   distance = int(dist_real),
+                   duration = int(dur_min),
+                   profile  = perfil)
+ 
+# ── Resolver ──────────────────────────────────────────────────────
+result = m.solve(stop=MaxRuntime(3), seed=42)
+sol    = result.best
+ 
+# ── Resultados ────────────────────────────────────────────────────
+print(f"Factible        : {sol.is_feasible()}")
+print(f"Distancia total : {sol.distance()} km")
+print(f"Duración total  : {sol.duration()} min")
+print(f"Costo distancia : {sol.distance_cost()}")
+print(f"Costo duración  : {sol.duration_cost()}")
+print(f"Costo total     : {sol.distance_cost() + sol.duration_cost()}")
+ 
+for route in sol.routes():
+    nombres = [m.locations[v].name for v in route.visits()]
+    print(f"\nRuta        : {' → '.join(nombres)}")
+    print(f"  Distancia : {route.distance()} km")
+    print(f"  Duración  : {route.duration()} min")
+```
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/arcos_clientes_coordenadas.xlsx" download> Clientes Coordenadas</a>
+
+**Solución:**
+
+</details>
+
+<details>
+<summary> Ejemplo 2 — Matriz de distancias </summary>
+ 
+Las distancias entre ubicaciones se obtienen a partir de una matriz almacenada en el archivo Excel, mientras que la duración de cada arco se calcula dividiendo la distancia recorrida y la velocidad promedio definida para el vehículo.
+
+Los clientes se incorporan al modelo respetando el mismo orden en el que aparecen registrados en la hoja de clientes. Posteriormente, durante la construcción de los arcos, se recorren las ubicaciones generadas dentro del modelo y se utiliza el nombre asociado a cada una para consultar directamente la distancia correspondiente en la matriz, utilizando la ubicación de origen como fila y la de destino como columna.
+
+Este procedimiento garantiza que cada arco utilice la distancia correcta entre las ubicaciones correspondientes, evitando depender del orden interno asignado por `PyVRP` y asegurando la consistencia entre los datos de entrada y la representación del problema dentro del modelo.
+
+El archivo `arcos_distancias_matriz.xlsx` contiene dos hojas:
+ 
+- **Clientes:** nombre, demanda, ventanas de tiempo y tiempo de servicio.
+- **Distancias:** matriz cuadrada con nombres en filas y columnas, en el mismo orden en que los clientes fueron agregados al modelo.
+ 
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+ 
+m = Model()
+perfil = m.add_profile()
+ 
+df = pd.read_excel("arcos_distancias_matriz.xlsx", sheet_name="Clientes")
+ 
+# ── Depósito ──────────────────────────────────────────────────────
+fila_dep = df[df["nombre"] == "Deposito"].iloc[0]
+depot = m.add_depot(x=0, y=0, name=fila_dep["nombre"])
+ 
+# ── Clientes con location asignado por orden de aparición ─────────
+for _, row in df[df["nombre"] != "Deposito"].iterrows():
+    m.add_client(
+        x                = 0,
+        y                = 0,
+        delivery         = int(row["delivery"]),
+        tw_early         = int(row["tw_early"]),
+        tw_late          = int(row["tw_late"]),
+        service_duration = int(row["service_duration"]),
+        name             = str(row["nombre"])
+    )
+ 
+# ── Tipo de vehículo ──────────────────────────────────────────────
+m.add_vehicle_type(
+    num_available      = 2,
+    capacity           = 50,
+    tw_early           = 480,
+    tw_late            = 1080,
+    shift_duration     = 480,
+    unit_distance_cost = 3,
+    unit_duration_cost = 2,
+    profile            = perfil,
+    name               = "Vehiculo"
+)
+ 
+# ── Arcos desde matriz de distancias, duración desde velocidad ────
+df_dist   = pd.read_excel("arcos_distancias_matriz.xlsx", sheet_name="Distancias", index_col=0)
+VELOCIDAD = 40 # Km/ h
+ 
+# Los nodos se recorren en el mismo orden en que fueron agregados al modelo
+locs  = list(m.locations)
+nodos = [loc.name for loc in locs]
+ 
+for frm in locs:
+    for to in locs:
+        dist = df_dist.loc[frm.name, to.name]
+        dur  = (dist / VELOCIDAD) * 60
+        m.add_edge(frm, to,
+                   distance = int(dist),
+                   duration = int(dur),
+                   profile  = perfil)
+ 
+# ── Resolver ──────────────────────────────────────────────────────
+result = m.solve(stop=MaxRuntime(3), seed=42)
+sol    = result.best
+ 
+# ── Resultados ────────────────────────────────────────────────────
+print(f"Factible        : {sol.is_feasible()}")
+print(f"Distancia total : {sol.distance()} km")
+print(f"Duración total  : {sol.duration()} min")
+print(f"Costo distancia : {sol.distance_cost()}")
+print(f"Costo duración  : {sol.duration_cost()}")
+print(f"Costo total     : {sol.distance_cost() + sol.duration_cost()}")
+ 
+for route in sol.routes():
+    nombres = [m.locations[v].name for v in route.visits()]
+    print(f"\nRuta        : {' → '.join(nombres)}")
+    print(f"  Distancia : {route.distance()} km")
+    print(f"  Duración  : {route.duration()} min")
+```
+ 
+> **Nota:** Los nombres de las ubicaciones en el modelo deben coincidir exactamente con los nombres de las filas y columnas de la matriz, ya que los arcos se buscan por nombre con `df_dist.loc[frm.name, to.name]`. Cualquier diferencia de mayúsculas, espacios o caracteres hará que la búsqueda falle.
+
+> **Nota:** Este código funciona tanto para matrices simétricas como asimétricas, ya que recorre todos los pares ordenados `(frm, to)` y agrega un arco independiente para cada dirección.
+
+</details>
+
+<details>
+<summary> Ejemplo 3 — Matriz de duraciones </summary>
+ 
+Cuando no se dispone de distancias sino únicamente de tiempos de recorrido entre ubicaciones, se puede usar solo la matriz de duraciones y definir `distance=0` en todos los arcos. En este caso el costo del vehículo se define únicamente por unidad de duración. El archivo `arcos_matriz_duracion.xlsx` contiene dos hojas:
+ 
+- **Clientes:** nombre, demanda, ventanas de tiempo y tiempo de servicio.
+- **Duraciones:** matriz cuadrada de tiempos de recorrido en minutos con nombres en filas y columnas.
+ 
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+ 
+m = Model()
+perfil = m.add_profile()
+ 
+df = pd.read_excel("arcos_matriz_duracion.xlsx", sheet_name="Clientes")
+ 
+# ── Depósito ──────────────────────────────────────────────────────
+fila_dep = df[df["nombre"] == "Deposito"].iloc[0]
+depot = m.add_depot(x=0, y=0, name=fila_dep["nombre"])
+ 
+# ── Clientes con location asignado por orden de aparición ─────────
+for _, row in df[df["nombre"] != "Deposito"].iterrows():
+    m.add_client(
+        x                = 0,
+        y                = 0,
+        delivery         = int(row["delivery"]),
+        tw_early         = int(row["tw_early"]),
+        tw_late          = int(row["tw_late"]),
+        service_duration = int(row["service_duration"]),
+        name             = str(row["nombre"])
+    )
+ 
+# ── Tipo de vehículo ──────────────────────────────────────────────
+# Sin unit_distance_cost porque no hay distancias
+m.add_vehicle_type(
+    num_available      = 2,
+    capacity           = 50,
+    tw_early           = 480,
+    tw_late            = 1080,
+    shift_duration     = 480,
+    unit_distance_cost = 0,
+    unit_duration_cost = 2,
+    profile            = perfil,
+    name               = "Vehiculo"
+)
+ 
+# ── Arcos desde matriz de duraciones, distance=0 ──────────────────
+df_dur = pd.read_excel("arcos_matriz_duracion.xlsx", sheet_name="Duraciones", index_col=0)
+locs   = list(m.locations)
+ 
+for frm in locs:
+    for to in locs:
+        dur = df_dur.loc[frm.name, to.name]
+        m.add_edge(frm, to,
+                   distance = 0,
+                   duration = int(dur),
+                   profile  = perfil)
+ 
+# ── Resolver ──────────────────────────────────────────────────────
+result = m.solve(stop=MaxRuntime(3), seed=42)
+sol    = result.best
+ 
+# ── Resultados ────────────────────────────────────────────────────
+print(f"Factible       : {sol.is_feasible()}")
+print(f"Duración total : {sol.duration()} min")
+print(f"Costo duración : {sol.duration_cost()}")
+ 
+for route in sol.routes():
+    nombres = [m.locations[v].name for v in route.visits()]
+    print(f"\nRuta       : {' → '.join(nombres)}")
+    print(f"  Duración : {route.duration()} min")
+    print(f"  Costo    : {route.duration_cost()}")
+```
+> **Nota:** Este código funciona tanto para matrices simétricas como asimétricas, ya que recorre todos los pares ordenados `(frm, to)` y agrega un arco independiente para cada dirección.
