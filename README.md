@@ -3294,7 +3294,7 @@ for route in sol.routes():
 
 > **INF:** los arcos prohibidos reciben `distance = INF = 10**4`. Los arcos cuyo nodo de salida y nodo de llegada es igual siempre tienen `distance = 0` y `duration = 0` independientemente del perfil, ya que PyVRP lo exige explícitamente.
 
-**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_clientes_restringidos.xlsx.xlsx" download> Perfiles Clientes Restringidos</a>
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_clientes_restringidos.xlsx" download> Perfiles Clientes Restringidos</a>
 
 **Solución:**
 
@@ -3444,7 +3444,7 @@ for route in sol.routes():
 
 > **Vías restringidas:** en lugar de tener matrices separadas por tipo de vehículo, se usa una única matriz de distancias y una hoja adicional que indica el tipo de vía de cada arco. Al construir los arcos, se consulta esa hoja y se asigna `INF` cuando el tipo de vía no coincide con el permitido por el vehículo, impidiendo que se utilicen esos arcos en la solución.
 
-**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_caminos_restringidos.xlsx.xlsx" download> Perfiles Caminos Restringidos</a>
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_caminos_restringidos.xlsx" download> Perfiles Caminos Restringidos</a>
 
 **Solución:**
 Resumen general
