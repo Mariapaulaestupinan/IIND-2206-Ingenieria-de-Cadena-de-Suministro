@@ -3154,3 +3154,312 @@ Rutas asignadas
 |------|----------|-------|
 | Cliente_3 → Cliente_4 | 93 min | 186 |
 | Cliente_2 → Cliente_1 | 107 min | 214 |
+
+</details>
+</details>
+<details>
+<summary> Perfiles de enrutamiento </summary>
+ 
+Un perfil de enrutamiento define un conjunto de arcos con sus distancias y duraciones, formando una matriz completa de conectividad entre ubicaciones. Cada tipo de vehículo tiene un perfil asignado, y ese perfil determina exactamente qué arcos puede recorrer durante su ruta.
+ 
+Esto permite modelar dos tipos de restricciones operativas que no pueden expresarse directamente con los atributos estándar de PyVRP:
+ 
+- **Restricciones sobre clientes:** ciertos vehículos solo pueden atender a un subconjunto de clientes. Por ejemplo, furgones refrigerados para clientes que requieren cadena de frío, y motos para clientes de paquetería ligera. Esto se modela asignando una distancia muy grande (`INF`) a los arcos que conectan con los clientes que no se pueden atender, haciendo que nunca se incluyan en ninguna ruta.
+- **Restricciones sobre caminos:** ciertos vehículos solo pueden circular por ciertas vías. Por ejemplo, los camiones de carga pesada solo pueden circular por vías principales debido a restricciones de peso y dimensiones, mientras que los furgones, al ser vehículos más compactos, tienen acceso tanto a vías principales como a vías secundarias, lo que les permite alcanzar zonas donde los camiones no pueden ingresar. Esto se modela con matrices de distancias distintas para cada perfil, donde los arcos no permitidos tienen distancia `INF`.
+En ambos casos, `INF` debe ser un número entero suficientemente grande para que los arcos nunca se elijan, pero que no cause desbordamiento numérico. Un valor como `10**4` funciona bien en la mayoría de los casos.
+ 
+---
+<details>
+<summary> Ejemplo 1 — Vehículos con clientes restringidos </summary>
+ 
+FreshRoute opera una flota mixta de **furgones** y **motos** para distribución urbana. Los furgones tienen mayor capacidad y atienden clientes con pedidos grandes, mientras que las motos son más ágiles y atienden clientes con pedidos pequeños. Por política operativa, cada tipo de vehículo solo puede atender a su grupo de clientes asignado.
+ 
+El archivo `perfiles_clientes_restringidos.xlsx` contiene tres hojas:
+ 
+- **Clientes:** nombre, demanda, ventanas de tiempo (min), tiempo de servicio (min) y `tipo_atencion` que indica si el cliente es atendido por `furgon` o `moto`.
+- **Vehiculos:** nombre, cantidad disponible, capacidad, velocidad (Km/h), ventanas de tiempo (min), duración del turno (min) y costos unitarios.
+- **Distancias:** matriz de distancias en km entre todas las ubicaciones.
+
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+ 
+ESCALA = 100      # factor de escala
+INF    = 10**4   # distancia prohibida
+ 
+m = Model()
+perfil_furgon = m.add_profile(name="Furgon")
+perfil_moto   = m.add_profile(name="Moto")
+ 
+df_cli  = pd.read_excel("perfiles_clientes_restringidos.xlsx", sheet_name="Clientes")
+df_veh  = pd.read_excel("perfiles_clientes_restringidos.xlsx", sheet_name="Vehiculos")
+df_dist = pd.read_excel("perfiles_clientes_restringidos.xlsx", sheet_name="Distancias", index_col=0)
+ 
+# ── Depósito ──────────────────────────────────────────────────────
+fila_dep = df_cli[df_cli["nombre"] == "Deposito"].iloc[0]
+m.add_depot(x=0, y=0,
+            tw_early         = int(fila_dep["tw_early (min)"]         * ESCALA),
+            tw_late          = int(fila_dep["tw_late (min)"]           * ESCALA),
+            service_duration = int(fila_dep["service_duration (min)"] * ESCALA),
+            name             = fila_dep["nombre"])
+ 
+# ── Clientes ──────────────────────────────────────────────────────
+# Se guarda el tipo de atención de cada cliente para usarlo al construir los arcos
+tipo_atencion = {}
+for _, row in df_cli[df_cli["nombre"] != "Deposito"].iterrows():
+    m.add_client(x=0, y=0,
+                 delivery         = int(row["delivery"]),
+                 tw_early         = int(row["tw_early (min)"]         * ESCALA),
+                 tw_late          = int(row["tw_late (min)"]           * ESCALA),
+                 service_duration = int(row["service_duration (min)"] * ESCALA),
+                 name             = str(row["nombre"]))
+    tipo_atencion[row["nombre"]] = row["tipo_atencion"]
+ 
+# ── Tipos de vehículo ─────────────────────────────────────────────
+perfiles_veh = {"Furgon": perfil_furgon, "Moto": perfil_moto}
+vel_por_tipo  = {}
+ 
+for _, row in df_veh.iterrows():
+    nombre = row["nombre"]
+    vel_por_tipo[nombre] = float(row["velocidad (Km/h)"])
+    m.add_vehicle_type(
+        num_available      = int(row["num_available"]),
+        capacity           = int(row["capacity"]),
+        tw_early           = int(row["tw_early (min)"]       * ESCALA),
+        tw_late            = int(row["tw_late (min)"]         * ESCALA),
+        shift_duration     = int(row["shift_duration (min)"] * ESCALA),
+        unit_distance_cost = int(row["unit_distance_cost"]),
+        unit_duration_cost = int(row["unit_duration_cost"]),
+        profile            = perfiles_veh[nombre],
+        name               = nombre
+    )
+ 
+# ── Arcos ─────────────────────────────────────────────────────────
+# Para cada perfil, los arcos cuyo nodo de salida o llegada no sea atendido por ese vehículo reciben distancia INF
+locs = list(m.locations)
+ 
+# Self loops: distancia y duración 0 para ambos perfiles
+for loc in locs:
+    m.add_edge(loc, loc, distance=0, duration=0, profile=perfil_furgon)
+    m.add_edge(loc, loc, distance=0, duration=0, profile=perfil_moto)
+ 
+# Arcos entre ubicaciones distintas
+for frm in locs:
+    for to in locs:
+        if frm.name == to.name:
+            continue
+ 
+        dist_km = df_dist.loc[frm.name, to.name]
+ 
+        # Perfil furgon: INF si el arco involucra un cliente de moto
+        if tipo_atencion.get(to.name) == "moto" or tipo_atencion.get(frm.name) == "moto":
+            m.add_edge(frm, to, distance=INF, duration=0, profile=perfil_furgon)
+        else:
+            m.add_edge(frm, to,
+                       distance = int(dist_km * ESCALA),
+                       duration = int((dist_km / vel_por_tipo["Furgon"]) * 60 * ESCALA),
+                       profile  = perfil_furgon)
+ 
+        # Perfil moto: INF si el arco involucra un cliente de furgon
+        if tipo_atencion.get(to.name) == "furgon" or tipo_atencion.get(frm.name) == "furgon":
+            m.add_edge(frm, to, distance=INF, duration=0, profile=perfil_moto)
+        else:
+            m.add_edge(frm, to,
+                       distance = int(dist_km * ESCALA),
+                       duration = int((dist_km / vel_por_tipo["Moto"]) * 60 * ESCALA),
+                       profile  = perfil_moto)
+ 
+# ── Resolver ──────────────────────────────────────────────────────
+result = m.solve(stop=MaxRuntime(3), seed=42)
+sol    = result.best
+ 
+# ── Resultados ────────────────────────────────────────────────────
+print(f"Factible        : {sol.is_feasible()}")
+print(f"Distancia total : {sol.distance()      / ESCALA:.2f} km")
+print(f"Duración total  : {sol.duration()      / ESCALA:.2f} min")
+print(f"Costo distancia : {sol.distance_cost() / ESCALA:.2f}")
+print(f"Costo duración  : {sol.duration_cost() / ESCALA:.2f}")
+print(f"Costo total     : {(sol.distance_cost() + sol.duration_cost()) / ESCALA:.2f}")
+ 
+for route in sol.routes():
+    vt      = m.vehicle_types[route.vehicle_type()]
+    nombres = [m.locations[v].name for v in route.visits()]
+    print(f"\n  {vt.name}: {' → '.join(nombres)}")
+    print(f"    Distancia : {route.distance() / ESCALA:.2f} km")
+    print(f"    Duración  : {route.duration() / ESCALA:.2f} min")
+```
+ 
+> **Escalado:** las distancias de la matriz son decimales, por lo que se escala por `ESCALA = 100` para preservar la exactitud tanto en la distancia como en la duración calculada.
+
+> **INF:** los arcos prohibidos reciben `distance = INF = 10**4`. Los arcos cuyo nodo de salida y nodo de llegada es igual siempre tienen `distance = 0` y `duration = 0` independientemente del perfil, ya que PyVRP lo exige explícitamente.
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_clientes_restringidos.xlsx.xlsx" download> Perfiles Clientes Restringidos</a>
+
+**Solución:**
+
+Resumen general
+
+| Parámetro | Resultado |
+|-----------|-----------|
+| Distancia total recorrida | 102.79 km |
+| Duración total | 257.09 min |
+| Costo por distancia | 247.87 |
+| Costo por duración | 381.58 |
+| Costo total 629.45 |
+
+Rutas asignadas
+
+| Vehículo | Ruta | Distancia | Duración |
+|----------|------|-----------|----------|
+| Furgón | Cliente_1 → Cliente_2 → Cliente_3 | 42.29 km | 124.49 min |
+| Moto | Cliente_4 → Cliente_6 | 38.90 km | 79.68 min |
+| Moto | Cliente_5 | 21.60 km | 52.92 min |
+ 
+</details>
+<details>
+<summary> Ejemplo 2 — Vehículos con caminos restringidos </summary>
+ 
+LogiRed opera una red de distribución que utiliza **camiones** y **furgones**. Los camiones, por restricciones de peso, solo pueden circular por vías principales, mientras que los furgones, al ser vehículos más compactos, tienen acceso únicamente a vías secundarias, lo que les permite alcanzar zonas donde los camiones no pueden ingresar. La red tiene una única matriz de distancias, pero cada arco tiene asociado un tipo de vía que determina qué vehículos pueden usarlo.
+ 
+El archivo `perfiles_caminos_restringidos.xlsx` contiene cuatro hojas:
+ 
+- **Clientes:** nombre, demanda, ventanas de tiempo (min) y tiempo de servicio (min).
+- **Vehiculos:** nombre, cantidad, capacidad, velocidad (Km/h), ventanas de tiempo (min), duración del turno (min), costos unitarios y `vias_permitidas` que indica el tipo de vía que puede usar ese vehículo (`primaria` o `secundaria`).
+- **Distancias:** matriz de distancias en km entre todas las ubicaciones.
+- **Vias:** matriz con el tipo de vía de cada arco (`primaria` o `secundaria`).
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+ 
+ESCALA = 100       # factor de escala
+INF    = 10**4    # distancia prohibida
+ 
+m = Model()
+perfil_camion = m.add_profile(name="Camion")
+perfil_furgon = m.add_profile(name="Furgon")
+ 
+df_cli  = pd.read_excel("perfiles_caminos_restringidos.xlsx", sheet_name="Clientes")
+df_veh  = pd.read_excel("perfiles_caminos_restringidos.xlsx", sheet_name="Vehiculos")
+df_dist = pd.read_excel("perfiles_caminos_restringidos.xlsx", sheet_name="Distancias", index_col=0)
+df_via  = pd.read_excel("perfiles_caminos_restringidos.xlsx", sheet_name="Vias",       index_col=0)
+ 
+# ── Depósito ──────────────────────────────────────────────────────
+fila_dep = df_cli[df_cli["nombre"] == "Deposito"].iloc[0]
+m.add_depot(x=0, y=0,
+            tw_early         = int(fila_dep["tw_early (min)"]         * ESCALA),
+            tw_late          = int(fila_dep["tw_late (min)"]           * ESCALA),
+            service_duration = int(fila_dep["service_duration (min)"] * ESCALA),
+            name             = fila_dep["nombre"])
+ 
+# ── Clientes ──────────────────────────────────────────────────────
+for _, row in df_cli[df_cli["nombre"] != "Deposito"].iterrows():
+    m.add_client(x=0, y=0,
+                 delivery         = int(row["delivery"]),
+                 tw_early         = int(row["tw_early (min)"]         * ESCALA),
+                 tw_late          = int(row["tw_late (min)"]           * ESCALA),
+                 service_duration = int(row["service_duration (min)"] * ESCALA),
+                 name             = str(row["nombre"]))
+ 
+# ── Tipos de vehículo ─────────────────────────────────────────────
+perfiles_map  = {"Camion": perfil_camion, "Furgon": perfil_furgon}
+vel_por_tipo  = {}
+vias_por_tipo = {}
+ 
+for _, row in df_veh.iterrows():
+    nombre = row["nombre"]
+    vel_por_tipo[nombre]  = float(row["velocidad (Km/h)"])
+    vias_por_tipo[nombre] = row["vias_permitidas"]
+    m.add_vehicle_type(
+        num_available      = int(row["num_available"]),
+        capacity           = int(row["capacity"]),
+        tw_early           = int(row["tw_early (min)"]       * ESCALA),
+        tw_late            = int(row["tw_late (min)"]         * ESCALA),
+        shift_duration     = int(row["shift_duration (min)"] * ESCALA),
+        unit_distance_cost = int(row["unit_distance_cost"]),
+        unit_duration_cost = int(row["unit_duration_cost"]),
+        profile            = perfiles_map[nombre],
+        name               = nombre
+    )
+ 
+# ── Arcos ─────────────────────────────────────────────────────────
+# Se consulta la hoja Vias para saber si cada arco está permitido
+# para cada tipo de vehículo según su vias_permitidas
+locs = list(m.locations)
+ 
+# Self loops: distancia y duración 0 para ambos perfiles
+for loc in locs:
+    m.add_edge(loc, loc, distance=0, duration=0, profile=perfil_camion)
+    m.add_edge(loc, loc, distance=0, duration=0, profile=perfil_furgon)
+ 
+# Arcos entre ubicaciones distintas
+for frm in locs:
+    for to in locs:
+        if frm.name == to.name:
+            continue
+ 
+        dist_km  = df_dist.loc[frm.name, to.name]
+        tipo_via = df_via.loc[frm.name, to.name]
+ 
+        # Camion: INF si el tipo de vía no coincide con su vía permitida
+        if tipo_via != vias_por_tipo["Camion"]:
+            m.add_edge(frm, to, distance=INF, duration=0, profile=perfil_camion)
+        else:
+            m.add_edge(frm, to,
+                       distance = int(dist_km * ESCALA),
+                       duration = int((dist_km / vel_por_tipo["Camion"]) * 60 * ESCALA),
+                       profile  = perfil_camion)
+ 
+        # Furgon: INF si el tipo de vía no coincide con su vía permitida
+        if tipo_via != vias_por_tipo["Furgon"]:
+            m.add_edge(frm, to, distance=INF, duration=0, profile=perfil_furgon)
+        else:
+            m.add_edge(frm, to,
+                       distance = int(dist_km * ESCALA),
+                       duration = int((dist_km / vel_por_tipo["Furgon"]) * 60 * ESCALA),
+                       profile  = perfil_furgon)
+ 
+# ── Resolver ──────────────────────────────────────────────────────
+result = m.solve(stop=MaxRuntime(3), seed=42)
+sol    = result.best
+ 
+# ── Resultados ────────────────────────────────────────────────────
+print(f"Factible        : {sol.is_feasible()}")
+print(f"Distancia total : {sol.distance()      / ESCALA:.2f} km")
+print(f"Duración total  : {sol.duration()      / ESCALA:.2f} min")
+print(f"Costo distancia : {sol.distance_cost() / ESCALA:.2f}")
+print(f"Costo duración  : {sol.duration_cost() / ESCALA:.2f}")
+print(f"Costo total     : {(sol.distance_cost() + sol.duration_cost()) / ESCALA:.2f}")
+ 
+for route in sol.routes():
+    vt      = m.vehicle_types[route.vehicle_type()]
+    nombres = [m.locations[v].name for v in route.visits()]
+    print(f"\n  {vt.name}: {' → '.join(nombres)}")
+    print(f"    Distancia : {route.distance() / ESCALA:.2f} km")
+    print(f"    Duración  : {route.duration() / ESCALA:.2f} min")
+```
+ 
+> **Escalado:** las distancias de la matriz son decimales, por lo que se escala por `ESCALA = 100` para preservar la exactitud tanto en la distancia como en la duración calculada. Todos los tiempos del modelo se escalan por el mismo factor para mantener consistencia interna.
+
+> **Vías restringidas:** en lugar de tener matrices separadas por tipo de vehículo, se usa una única matriz de distancias y una hoja adicional que indica el tipo de vía de cada arco. Al construir los arcos, se consulta esa hoja y se asigna `INF` cuando el tipo de vía no coincide con el permitido por el vehículo, impidiendo que se utilicen esos arcos en la solución.
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/perfiles_caminos_restringidos.xlsx.xlsx" download> Perfiles Caminos Restringidos</a>
+
+**Solución:**
+Resumen general
+
+| Parámetro | Resultado |
+|-----------|-----------|
+| Distancia total recorrida | 302.79 km |
+| Duración total | 234.05 min |
+| Costo por distancia | 908.37 |
+| Costo por duración | 234.05 |
+| Costo total | 1142.42 |
+
+Rutas asignadas
+
+| Vehículo | Ruta | Distancia | Duración |
+|----------|------|-----------|----------|
+| Furgón | Cliente_6 → Cliente_2 → Cliente_5 | 164.90 km | 133.52 min |
+| Furgón | Cliente_3 → Cliente_1 → Cliente_4 | 137.89 km | 100.53 min |
