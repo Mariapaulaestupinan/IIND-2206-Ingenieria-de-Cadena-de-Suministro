@@ -4104,3 +4104,173 @@ Resumen de la ruta
 | Hora de inicio | 12:20 |
 | Hora de finalización | 17:11 |
 | Autonomía restante | 106 km |
+
+</details>
+
+<details>
+<summary> Red de distribución LogiMarket S.A.S. </summary>
+  
+LogiMarket S.A.S. distribuye insumos mayoristas a 100 clientes (distribuidores, oficinas y pequeños comercios) desde un único depósito que opera entre las 7:00 a.m. y las 11:00 p.m. La flota es homogénea: 8 vehículos eléctricos idénticos con capacidad de 125 unidades, velocidad de 36 km/h y autonomía de 55 km. A diferencia de otros ejercicios, los clientes no tienen ventanas de tiempo individuales, por lo que pueden ser atendidos en cualquier momento dentro del horario del depósito. El modelo minimiza la distancia total recorrida respetando las restricciones de capacidad y autonomía.
+
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20LogiMarket.pdf" download>Enunciado LogiMarket</a>
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Datos_LogiMarket.xlsx" download> Datos LogiMarket</a>
+
+**Desarrollo:**
+
+Paso 0 — Importación de librerías
+
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+```
+Paso 1 — Carga de datos desde Excel
+
+Se cargan las dos hojas del archivo `Datos_LogiMarket.xlsx`. La hoja `Info_clientes` contiene la demanda y el tiempo de servicio de cada cliente. La hoja `Distancias_Clientes` contiene la matriz de distancias en kilómetros entre el depósito y los 100 clientes.
+
+```python
+ARCHIVO = "Datos_LogiMarket.xlsx"
+
+df_cli  = pd.read_excel(ARCHIVO, sheet_name="Info_clientes")
+df_dist = pd.read_excel(ARCHIVO, sheet_name="Distancias_Clientes", index_col=0)
+```
+
+Paso 2 — Parámetros del problema y escalado
+
+Los parámetros de la flota son comunes a todos los vehículos y se definen directamente en el código. El depósito opera de 7:00 a.m. a 11:00 p.m., lo que en minutos desde las 00:00 corresponde a `[420, 1380]`.
+
+Las distancias ya son enteros en kilómetros y no se escalan. Sin embargo, la duración de cada arco se calcula como `distancia / 36 × 60` en minutos, que resulta decimal. Se escala por `ESCALA = 100` para preservar precisión. Todos los tiempos del modelo se escalan por el mismo factor. Al reportar, la duración se desescala dividiendo por `ESCALA`.
+
+```python
+ESCALA    = 100
+VELOCIDAD = 36.0   # km/h
+AUTO      = 55     # km
+CAP       = 125    # unidades
+N_VEH     = 8
+
+DEP_EARLY = int(7  * 60 * ESCALA)   # 07:00 → 4200
+DEP_LATE  = int(23 * 60 * ESCALA)   # 23:00 → 13800
+JORNADA   = int((23 - 7) * 60 * ESCALA)
+```
+Paso 3 — Crear el modelo, perfil y depósito
+
+Se crea el modelo con un único perfil, ya que todos los vehículos son idénticos y comparten la misma velocidad. El depósito se agrega con el horario de operación escalado.
+
+```python
+m      = Model()
+perfil = m.add_profile()
+
+m.add_depot(
+    x        = 0,
+    y        = 0,
+    tw_early = DEP_EARLY,
+    tw_late  = DEP_LATE,
+    name     = "DEPOT"
+)
+```
+
+Paso 4 — Agregar los clientes
+
+Los clientes no tienen ventanas de tiempo individuales, por lo que se les asigna el mismo horario del depósito: pueden ser atendidos en cualquier momento entre las 7:00 a.m. y las 11:00 p.m. El tiempo de servicio se escala por `ESCALA`.
+
+```python
+for _, row in df_cli.iterrows():
+    m.add_client(
+        x                = 0,
+        y                = 0,
+        delivery         = int(row["Demanda"]),
+        service_duration = int(row["Servicio_min"] * ESCALA),
+        tw_early         = DEP_EARLY,
+        tw_late          = DEP_LATE,
+        name             = str(row["ID"])
+    )
+```
+
+Paso 5 — Agregar el tipo de vehículo
+
+Se agrega un único tipo de vehículo con los parámetros comunes a toda la flota. La autonomía no se escala porque las distancias tampoco se escalaron. Se usa `unit_distance_cost = 1` para que el solver minimice la distancia total.
+
+```python
+m.add_vehicle_type(
+    num_available      = N_VEH,
+    capacity           = CAP,
+    max_distance       = AUTO,
+    tw_early           = DEP_EARLY,
+    tw_late            = DEP_LATE,
+    shift_duration     = JORNADA,
+    unit_distance_cost = 1,
+    profile            = perfil,
+    name               = "Electrico"
+)
+```
+
+> **Nota:** `unit_distance_cost = 1` hace que el objetivo sea directamente la distancia total recorrida, lo que permite minimizarla sin necesidad de escalar costos.
+
+Paso 6 — Agregar los arcos
+
+La duración se calcula dividiendo la distancia entre la velocidad y multiplicando por 60 para obtener minutos, luego se escala.
+
+```python
+locs = list(m.locations)
+
+# Self loops
+for loc in locs:
+    m.add_edge(loc, loc, distance=0, duration=0, profile=perfil)
+
+# Arcos entre ubicaciones distintas
+for frm in locs:
+    for to in locs:
+        if frm.name == to.name:
+            continue
+        dist_km = df_dist.loc[frm.name, to.name]
+        dur_min = (dist_km / VELOCIDAD) * 60
+        m.add_edge(frm, to,
+                   distance = int(dist_km),
+                   duration = int(dur_min * ESCALA),
+                   profile  = perfil)
+```
+
+Paso 7 — Resolver
+
+Se resuelve con `MaxRuntime(30)` y `seed=42`.
+
+```python
+result = m.solve(stop=MaxRuntime(30), seed=42)
+sol    = result.best
+
+print(f"Factible : {sol.is_feasible()}")
+print(f"Rutas    : {sol.num_routes()}")
+```
+
+Paso 8 — Identificar la ruta con menor distancia y reportar
+
+Se ordenan las rutas por distancia y se selecciona la de menor recorrido. Se reporta su secuencia, duración, distancia, hora de inicio, hora de fin y autonomía restante.
+
+```python
+def min_a_hora(minutos_esc):
+    minutos = minutos_esc / ESCALA
+    h = int(minutos) // 60
+    m = int(minutos) % 60
+    return f"{h:02d}:{m:02d}"
+
+# Ordenar rutas por distancia y tomar la menor
+rutas_ordenadas = sorted(sol.routes(), key=lambda r: r.distance())
+ruta_min        = rutas_ordenadas[0]
+
+vt      = m.vehicle_types[ruta_min.vehicle_type()]
+nombres = [m.locations[v].name for v in ruta_min.visits()]
+
+autonomia_restante = AUTO - ruta_min.distance()
+
+print(f"\n{'='*55}")
+print(f"  RUTA CON MENOR DISTANCIA")
+print(f"{'='*55}")
+print(f"  Secuencia          : DEPOT → {' → '.join(nombres)} → DEPOT")
+print(f"  Distancia          : {ruta_min.distance()} km")
+print(f"  Duración           : {ruta_min.duration() / ESCALA:.1f} min")
+print(f"  Hora de inicio     : {min_a_hora(ruta_min.start_time())}")
+print(f"  Hora de fin        : {min_a_hora(ruta_min.end_time())}")
+print(f"  Autonomía restante : {autonomia_restante} km")
+print(f"{'='*55}")
+```
