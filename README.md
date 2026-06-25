@@ -3582,3 +3582,263 @@ Fin       : 14:33
 
 </details>
 </details>
+
+#### Ejercicios PyVRP
+<details>
+<summary> Red de distribución FrescoDistribución S.A.S </summary>
+  
+FrescoDistribución S.A.S. es una empresa de distribución de productos refrigerados que opera desde un único depósito y atiende a ocho clientes ubicados en distintas zonas de la ciudad. El problema consiste en diseñar las rutas de distribución que maximicen la utilidad neta de la operación, entendida como los ingresos generados por las entregas y recogidas en cada cliente menos los costos operativos de la flota utilizada. 
+
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado FrescoDistribución.pdf" download> Enunciado Fresco Distribución</a>
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Datos_FrescoDistribución.xlsx" download> Datos Fresco Distribución</a>
+
+**Desarrollo:**
+
+Paso 0 — Importación de las librerías necesarias.
+ 
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxIterations
+```
+Paso 1 — Carga de datos desde Excel
+ 
+Se cargan las tres hojas del archivo `Datos_FrescoDistribución.xlsx`. A partir de los datos de los clientes se calcula el **ingreso por cliente** como:
+ 
+$$I_i = g^{ent}_i \times q^{ent}_i + g^{rec}_i \times q^{rec}_i$$
+ 
+Este ingreso se usará como `prize` en PyVRP, lo que permite que el solver decida si conviene o no visitar cada cliente.
+ 
+```python
+ARCHIVO = "Datos_FrescoDistribución.xlsx"
+ 
+df_cli  = pd.read_excel(ARCHIVO, sheet_name="Clientes")
+df_flo  = pd.read_excel(ARCHIVO, sheet_name="Flota")
+df_dist = pd.read_excel(ARCHIVO, sheet_name="Distancias", index_col=0)
+ 
+# Calcular ingreso por cliente
+df_cli["Ingreso"] = (df_cli["Ganancia entrega ($/kg)"] * df_cli["Entrega (kg)"] +
+                     df_cli["Ganancia recogida ($/kg)"] * df_cli["Recogida (kg)"])
+ 
+``` 
+Paso 2 — Escalado
+ 
+PyVRP requiere valores enteros. Como los datos tienen decimales se usa un factor de escala `ESCALA = 100` para preservar precisión. Todos los tiempos y costos se multiplican por este factor antes de pasarlos al modelo, y al reportar se dividen por `ESCALA` o `ESCALA²` según corresponda.
+ 
+- **Distancias:** enteras pero se escalan por `ESCALA` para mantener consistencia en la función objetivo
+- **Duraciones:** `distancia / velocidad * 60` puede ser decimal → se escala por `ESCALA`
+- **Tiempos** (`tw_early`, `tw_late`, `service_duration`, `shift_duration`): en minutos → se escalan por `ESCALA`
+- **Costos unitarios** (`unit_distance_cost`, `fixed_cost`): decimales → se escalan por `ESCALA`
+- **Prize:** decimal → se escala por `ESCALA`
+  
+Al reportar los resultados se desescala cada componente según cómo fue escalado: la distancia y la duración se dividen por `ESCALA`, el costo fijo y el prize también se dividen por `ESCALA` ya que fueron escalados una sola vez. El costo de distancia en cambio se divide por `ESCALA²`, porque internamente PyVRP lo calcula como el producto de la distancia escalada por el costo unitario escalado, ambos multiplicados por `ESCALA`, resultando en un valor escalado al cuadrado.
+  
+```python
+ESCALA = 100
+```
+Paso 3 — Crear el modelo y agregar el depósito
+ 
+Se crea el modelo y se agrega el depósito. El horario del depósito es de **06:00 a 18:00**, lo que en minutos desde medianoche corresponde a `[360, 1080]`. Ambos valores se escalan por `ESCALA`.
+ 
+```python
+m      = Model()
+perfil = m.add_profile()
+ 
+DEP_EARLY = int(6  * 60 * ESCALA)   # 06:00 
+DEP_LATE  = int(18 * 60 * ESCALA)   # 18:00 
+ 
+m.add_depot(
+    x        = 0,
+    y        = 0,
+    tw_early = DEP_EARLY,
+    tw_late  = DEP_LATE,
+    name     = "Deposito"
+)
+```
+Paso 4 — Agregar los clientes
+ 
+Cada cliente se agrega con `required=False` y un prize igual a su ingreso, lo que le indica a `PyVRP` que la visita es opcional y que solo conviene realizarla si el ingreso que aporta supera el costo de incluirlo en la ruta. El `prize` es el ingreso calculado en el Paso 1, escalado por `ESCALA`. Las ventanas de tiempo se convierten a minutos y se escalan.
+ 
+```python
+for _, row in df_cli.iterrows():
+    tw_early_min = int(row["Ventana inicio"].split(":")[0]) * 60
+    tw_late_min  = int(row["Ventana fin"].split(":")[0])    * 60
+ 
+    m.add_client(
+        x                = 0,
+        y                = 0,
+        delivery         = int(row["Entrega (kg)"]),
+        pickup           = int(row["Recogida (kg)"]),
+        service_duration = int(row["Tiempo servicio (min)"] * ESCALA),
+        tw_early         = int(tw_early_min * ESCALA),
+        tw_late          = int(tw_late_min  * ESCALA),
+        prize            = int(round(row["Ingreso"]) * ESCALA),
+        required         = False,
+        name             = str(row["Cliente"])
+    )
+```
+Paso 5 — Agregar los arcos
+ 
+Cada tipo de vehículo tiene su propia velocidad, por lo que la duración de cada arco es diferente según el vehículo. Se crea un **perfil por tipo de vehículo** y se agregan los arcos correspondientes a cada perfil con su propia duración.
+ 
+Los arcos cuyo nodo de salida es igual al nodo de llegada tienen `distance=0` y `duration=0`. Para los demás arcos, la duración se calcula como `distancia / velocidad * 60` en minutos, escalada por `ESCALA`.
+ 
+```python
+nodos      = list(m.locations)
+nodos_dist = ["Deposito"] + list(df_cli["Cliente"])
+ 
+perfiles = {}
+for _, row in df_flo.iterrows():
+    tipo = row["Tipo"]
+    vel  = float(row["Velocidad (Km/h)"])
+    p    = m.add_profile(name=tipo)
+    perfiles[tipo] = (p, vel)
+ 
+    # Self loops
+    for loc in nodos:
+        m.add_edge(loc, loc, distance=0, duration=0, profile=p)
+ 
+    # Arcos entre ubicaciones distintas
+    for frm in nodos:
+        for to in nodos:
+            if frm.name == to.name:
+                continue
+            dist_km = df_dist.loc[frm.name, to.name]
+            dur_min = (dist_km / vel) * 60
+            m.add_edge(frm, to,
+                       distance = int(dist_km * ESCALA),
+                       duration = int(dur_min * ESCALA),
+                       profile  = p)
+```
+ 
+Paso 6 — Agregar los tipos de vehículos
+ 
+Cada tipo de vehículo se agrega con su capacidad, autonomía, costo fijo, costo por km, jornada y horario. Todos los tiempos y costos se escalan por `ESCALA`. El perfil asignado determina qué matriz de duraciones usa ese vehículo.
+ 
+```python
+for _, row in df_flo.iterrows():
+    tipo     = row["Tipo"]
+    perfil_v, vel = perfiles[tipo]
+ 
+    m.add_vehicle_type(
+        num_available      = int(row["Unidades disp."]),
+        capacity           = int(row["Capacidad (kg)"]),
+        max_distance       = int(row["Autonomía (km)"] * ESCALA),
+        fixed_cost         = int(row["Costo fijo ($)"]    * ESCALA),
+        unit_distance_cost = int(row["Costo por km ($/km)"] * ESCALA),
+        tw_early           = DEP_EARLY,
+        tw_late            = DEP_LATE,
+        shift_duration     = int(row["Jornada (h)"] * 60 * ESCALA),
+        profile            = perfil_v,
+        name               = tipo
+    )
+```
+ 
+> **Nota sobre la autonomía:** la autonomía también se escala por `ESCALA` para que PyVRP pueda compararla directamente con las distancias escaladas. Si la autonomía quedara sin escalar y las distancias sí están escaladas, el modelo interpretaría que los vehículos tienen una autonomía `ESCALA` veces menor a la real, haciendo que muchas rutas queden infactibles.
+ 
+Paso 7 — Resolver
+ 
+Se resuelve con `MaxIterations(2000)` y `seed=42` para garantizar reproducibilidad.
+ 
+```python
+result = m.solve(stop=MaxIterations(2000), seed=42)
+sol    = result.best
+ 
+print(f"Factible : {sol.is_feasible()}")
+```
+ 
+Paso 8 — Reportar resultados globales
+ 
+Se calculan los ingresos totales de los clientes visitados, el costo total de la flota y la utilidad neta. Los costos se desescalan dividiendo por `ESCALA` o `ESCALA²` según corresponda.
+ 
+```python
+def min_a_hora(minutos_esc):
+    minutos = minutos_esc / ESCALA
+    h = int(minutos) // 60
+    m = int(minutos) % 60
+    return f"{h:02d}:{m:02d}"
+ 
+# Clientes visitados e ingresos
+visitados     = set()
+ingreso_total = 0
+ 
+for route in sol.routes():
+    for v in route.visits():
+        loc = m.locations[v]
+        if loc.name != "Deposito":
+            visitados.add(loc.name)
+ 
+for _, row in df_cli.iterrows():
+    if row["Cliente"] in visitados:
+        ingreso_total += row["Ingreso"]
+ 
+# Costos
+costo_distancia = sol.distance_cost() / ESCALA**2
+costo_fijo      = sol.fixed_vehicle_cost() / ESCALA
+costo_total     = costo_distancia + costo_fijo
+utilidad_neta   = ingreso_total - costo_total
+ 
+print(f"\n{'='*55}")
+print(f"  RESULTADOS GLOBALES")
+print(f"{'='*55}")
+print(f"  Clientes visitados : {len(visitados)} de {len(df_cli)}")
+print(f"  Ingresos totales   : ${ingreso_total:,.2f}")
+print(f"  Costo de distancia : ${costo_distancia:,.2f}")
+print(f"  Costo fijo         : ${costo_fijo:,.2f}")
+print(f"  Costo total        : ${costo_total:,.2f}")
+print(f"  Utilidad neta      : ${utilidad_neta:,.2f}")
+print(f"{'='*55}")
+```
+ 
+Paso 9 — Reportar rutas 
+ 
+Para cada ruta activa se imprime la secuencia de nodos visitados con los horarios de llegada y salida, la carga del vehículo en cada nodo, la distancia, la duración y los costos de la ruta.
+ 
+```python
+for route in sol.routes():
+ 
+    vt      = m.vehicle_types[route.vehicle_type()]
+    nombres = [m.locations[v].name for v in route.visits()]
+ 
+    # Calcular ingresos de la ruta
+    ingreso_ruta = sum(
+        df_cli[df_cli["Cliente"] == n]["Ingreso"].values[0]
+        for n in nombres if n != "Deposito"
+    )
+ 
+    costo_dist_ruta = route.distance_cost() / ESCALA
+    costo_fijo_ruta = vt.fixed_cost / ESCALA
+    utilidad_ruta   = ingreso_ruta - costo_dist_ruta - costo_fijo_ruta
+ 
+    print(f"\n{'─'*55}")
+    print(f"  Vehículo   : {vt.name}")
+    print(f"  Ruta       : {' → '.join(nombres)}")
+    print(f"  Distancia  : {route.distance()} km")
+    print(f"  Duración   : {route.duration() / ESCALA:.1f} min")
+    print(f"  Inicio     : {min_a_hora(route.start_time())}")
+    print(f"  Fin        : {min_a_hora(route.end_time())}")
+    print(f"  Ingresos   : ${ingreso_ruta:,.2f}")
+    print(f"  Costo dist : ${costo_dist_ruta:,.2f}")
+    print(f"  Costo fijo : ${costo_fijo_ruta:,.2f}")
+    print(f"  Utilidad   : ${utilidad_ruta:,.2f}")
+ 
+    print(f"\n  {'Nodo':<12} {'Llega':>8} {'Sale':>8} {'Carga sal. (kg)':>16}")
+    print(f"  {'─'*50}")
+ 
+    carga = sum(df_cli["Entrega (kg)"])   # carga inicial = total de entregas
+    for visit in route.schedule():
+        loc  = m.locations[visit.location]
+        llega = min_a_hora(visit.start_service)
+        sale  = min_a_hora(visit.end_service)
+ 
+        if loc.name != "Deposito":
+            fila   = df_cli[df_cli["Cliente"] == loc.name].iloc[0]
+            carga -= fila["Entrega (kg)"]    # entrega
+            carga += fila["Recogida (kg)"]   # recogida
+ 
+        print(f"  {loc.name:<12} {llega:>8} {sale:>8} {carga:>16.0f}")
+ 
+print(f"\n{'─'*55}")
+```
+</details>
