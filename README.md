@@ -3881,3 +3881,213 @@ Furgoneta
 | C4 | 11:52 | 12:10 | 880 |
 | Depósito | 13:10 | 13:10 | 880 |
 </details>
+
+<details>
+<summary> Red de distribución FarmaExpress S.A.S </summary>
+  
+FarmaExpress S.A.S. distribuye productos farmacéuticos a 100 clientes desde un único depósito que opera entre las 6:00 a.m. y las 10:00 p.m. La flota es heterogénea y está compuesta por vehículos eléctricos de dos tipos: Pequeño y Grande, con diferentes capacidades, autonomías y velocidades. Cada cliente tiene una ventana horaria de atención y un tiempo de servicio fijo. Adicionalmente, ciertos tramos de la red vial están restringidos para todos los vehículos. El modelo minimiza el costo total de operación respetando todas las restricciones.
+
+**Enunciado:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Enunciado%20FarmaExpress.pdf" download>Enunciado FarmaExpress</a>
+
+**Base de datos:** <a href="https://raw.githubusercontent.com/Mariapaulaestupinan/IIND-2206-Ingenieria-de-Cadena-de-Suministro/main/Datos_FarmaExpress.xlsx" download> Datos FarmaExpress</a>
+
+**Desarrollo:**
+
+Paso 0 — Importación de librerías
+
+```python
+import pandas as pd
+from pyvrp import Model
+from pyvrp.stop import MaxRuntime
+```
+
+Paso 1 — Carga de datos desde Excel
+
+Se cargan las tres hojas del archivo `Datos_FarmaExpress.xlsx`. Las ventanas de tiempo de los clientes ya vienen expresadas en minutos desde las 00:00, por lo que no requieren conversión.
+
+```python
+ARCHIVO = "Datos_FarmaExpress.xlsx"
+
+df_cli  = pd.read_excel(ARCHIVO, sheet_name="Info_Clientes")
+df_veh  = pd.read_excel(ARCHIVO, sheet_name="Vehiculos")
+df_dist = pd.read_excel(ARCHIVO, sheet_name="Distancias_clientes", index_col=0)
+```
+Paso 2 — Escalado
+
+Las distancias ya son números enteros y los costos también son enteros, por lo que no se escalan. Sin embargo, la duración de cada arco se calcula como `distancia / velocidad × 60` en minutos y resulta decimal. Para convertirla a entero sin perder precisión se escala por `ESCALA = 100`. Todos los tiempos del modelo deben escalarse por el mismo factor.
+
+Al reportar: duración ÷ `ESCALA`. La distancia y los costos no se desescalan.
+
+```python
+ESCALA = 100
+```
+Paso 3 — Definir los segmentos restringidos
+
+El enunciado indica que los vehículos no pueden transitar por los segmentos C3–C7, C10–C12, C15–C18, C2–C5, C8–C11 y C14–C20. Estos segmentos se restringen en ambas direcciones. Se almacenan como un conjunto de pares congelados para facilitar la consulta al construir los arcos.
+
+```python
+restringidos = {
+    frozenset(["C3",  "C7"]),
+    frozenset(["C10", "C12"]),
+    frozenset(["C15", "C18"]),
+    frozenset(["C2",  "C5"]),
+    frozenset(["C8",  "C11"]),
+    frozenset(["C14", "C20"]),
+}
+```
+
+Paso 4 — Crear el modelo y los perfiles
+
+Se crea el modelo y se agrega un perfil por cada tipo de vehículo. Los perfiles son necesarios porque cada tipo de vehículo tiene una velocidad diferente, lo que resulta en duraciones distintas para los mismos arcos. Se guarda en un diccionario el perfil y la velocidad de cada tipo para usarlos al construir los arcos y los tipos de vehículo.
+
+```python
+m = Model()
+perfiles = {}
+
+for _, row in df_veh.iterrows():
+    tipo = row["Tipo_Vehiculo"]
+    vel  = float(row["Velocidad_km_h"])
+    p    = m.add_profile(name=tipo)
+    perfiles[tipo] = (p, vel)
+```
+Paso 5 — Agregar el depósito
+
+El depósito opera entre las 6:00 a.m. (360 min desde 00:00) y las 10:00 p.m. (1320 min desde 00:00). Ambos valores se escalan por `ESCALA`.
+
+```python
+fila_dep = df_cli[df_cli["Cliente"] == "DEPOT"].iloc[0]
+
+m.add_depot(
+    x        = 0,
+    y        = 0,
+    tw_early = int(fila_dep["Ventana_Inicio_min"] * ESCALA),
+    tw_late  = int(fila_dep["Ventana_Fin_min"]    * ESCALA),
+    name     = "DEPOT"
+)
+```
+
+Paso 6 — Agregar los clientes
+
+Las ventanas de tiempo y el tiempo de servicio se escalan por `ESCALA`. 
+
+```python
+for _, row in df_cli[df_cli["Cliente"] != "DEPOT"].iterrows():
+    m.add_client(
+        x                = 0,
+        y                = 0,
+        delivery         = int(row["Demanda"]),
+        service_duration = int(row["Tiempo_Servicio_min"] * ESCALA),
+        tw_early         = int(row["Ventana_Inicio_min"]  * ESCALA),
+        tw_late          = int(row["Ventana_Fin_min"]     * ESCALA),
+        name             = str(row["Cliente"])
+    )
+```
+
+Paso 7 — Agregar los arcos
+
+Se construyen los arcos para cada perfil. Los arcos cuyo nodo de origen y destino es iguao tienen `distance=0` y `duration=0`. Para los arcos entre ubicaciones distintas se consulta si el par pertenece a los segmentos restringidos: si es así, se asigna `distance=INF` para que nunca se usen esos arcos. Si no está restringido, se calcula la duración usando la velocidad del perfil correspondiente y se escala.
+
+Como las distancias no se escalan pero el `unit_distance_cost` tampoco se escala, el costo de distancia interno de PyVRP es `distancia × costo_km` directamente en unidades reales.
+
+```python
+INF  = 10**7
+locs = list(m.locations)
+
+# Self loops para todos los perfiles
+for loc in locs:
+    for p, vel in perfiles.values():
+        m.add_edge(loc, loc, distance=0, duration=0, profile=p)
+
+# Arcos entre ubicaciones distintas
+for frm in locs:
+    for to in locs:
+        if frm.name == to.name:
+            continue
+
+        dist_km = df_dist.loc[frm.name, to.name]
+        par     = frozenset([frm.name, to.name])
+
+        for p, vel in perfiles.values():
+            if par in restringidos:
+                m.add_edge(frm, to, distance=INF, duration=0, profile=p)
+            else:
+                dur_min = (dist_km / vel) * 60
+                m.add_edge(frm, to,
+                           distance = int(dist_km),
+                           duration = int(dur_min * ESCALA),
+                           profile  = p)
+```
+
+> **Nota:** los segmentos restringidos reciben `distance=INF` para que el solver los evite. La duración se pone en `0` porque el arco nunca será usado de todas formas.
+
+Paso 8 — Agregar los tipos de vehículos
+
+Cada tipo de vehículo se configura con su capacidad, autonomía, costos, ventana de operación y jornada. La autonomía se pasa sin escalar porque las distancias tampoco se escalaron. Los tiempos sí se escalan.
+
+```python
+jornada_esc = int((fila_dep["Ventana_Fin_min"] - fila_dep["Ventana_Inicio_min"]) * ESCALA)
+
+for _, row in df_veh.iterrows():
+    tipo   = row["Tipo_Vehiculo"]
+    p, vel = perfiles[tipo]
+
+    m.add_vehicle_type(
+        num_available      = int(row["Cantidad_Disponible"]),
+        capacity           = int(row["Capacidad_unidades"]),
+        max_distance       = int(row["Autonomia_km"]),
+        fixed_cost         = int(row["Costo_Fijo_COP"]),
+        unit_distance_cost = int(row["Costo_por_km_COP"]),
+        tw_early           = int(fila_dep["Ventana_Inicio_min"] * ESCALA),
+        tw_late            = int(fila_dep["Ventana_Fin_min"]    * ESCALA),
+        shift_duration     = jornada_esc,
+        profile            = p,
+        name               = tipo
+    )
+```
+
+> **Nota:** la autonomía no se escala porque las distancias tampoco se escalaron.
+
+Paso 9 — Resolver
+
+Se resuelve con `MaxRuntime(30)` y `seed=42`.
+
+```python
+result = m.solve(stop=MaxRuntime(30), seed=42)
+sol    = result.best
+
+print(f"Factible : {sol.is_feasible()}")
+print(f"Rutas    : {sol.num_routes()}")
+```
+
+Paso 10 — Identificar la ruta con menor distancia y reportar resultados
+
+Se ordenan las rutas por distancia y se selecciona la menor. Se reporta su secuencia, duración, distancia, hora de inicio, hora de fin y autonomía restante.
+
+```python
+def min_a_hora(minutos_esc):
+    minutos = minutos_esc / ESCALA
+    h = int(minutos) // 60
+    m = int(minutos) % 60
+    return f"{h:02d}:{m:02d}"
+
+# Ordenar rutas por distancia y tomar la menor
+rutas_ordenadas = sorted(sol.routes(), key=lambda r: r.distance())
+ruta_min        = rutas_ordenadas[0]
+
+vt      = m.vehicle_types[ruta_min.vehicle_type()]
+nombres = [m.locations[v].name for v in ruta_min.visits()]
+
+autonomia_restante = vt.max_distance - ruta_min.distance()
+
+print(f"\n{'='*55}")
+print(f"  RUTA CON MENOR DISTANCIA")
+print(f"{'='*55}")
+print(f"  Vehículo           : {vt.name}")
+print(f"  Secuencia          : DEPOT → {' → '.join(nombres)} → DEPOT")
+print(f"  Distancia          : {ruta_min.distance()} km")
+print(f"  Duración           : {ruta_min.duration() / ESCALA:.1f} min")
+print(f"  Hora de inicio     : {min_a_hora(ruta_min.start_time())}")
+print(f"  Hora de fin        : {min_a_hora(ruta_min.end_time())}")
+print(f"  Autonomía restante : {autonomia_restante} km")
+print(f"{'='*55}")
+```
