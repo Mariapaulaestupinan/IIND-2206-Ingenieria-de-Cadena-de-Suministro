@@ -2409,7 +2409,7 @@ m.add_client(
 </details>
 
 <details>
-<summary> Ejemplo 4 — Cargar clientes desde un archivo Excel </summary>
+<summary> Ejemplo 3 — Cargar clientes desde un archivo Excel </summary>
   
 Cuando el número de clientes es grande, la forma más práctica es cargarlos desde un archivo Excel. Imaginemos que tenemos un archivo llamado `clientes_pyvrp.xlsx` con la siguiente estructura:
 
