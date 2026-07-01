@@ -2378,36 +2378,7 @@ m.add_client(
 </details>
 
 <details>
-<summary> Ejemplo 2 — Crear un cliente sin coordenadas x, y </summary>
-
-Cuando la red se representa mediante una matriz de distancias en lugar de coordenadas en el plano, el cliente no tiene una posición geográfica definida. En ese caso, en lugar de `x` e `y`, se usa el parámetro `location`, que corresponde al índice de la fila y columna del cliente dentro de la matriz de distancias. A continuación se crea un cliente que corresponde al índice 1 de la matriz, con una demanda de 20 unidades, una ventana de tiempo entre las 9:00 y las 14:00, y un tiempo de servicio de 15 minutos.
- 
-```python
-m = Model()
- 
-# Ventana de tiempo en horas
-tw_early_h = 9    # 9:00
-tw_late_h  = 14   # 14:00
- 
-# Conversión a minutos (PyVRP requiere enteros)
-tw_early_min = tw_early_h * 60   # 540
-tw_late_min  = tw_late_h  * 60   # 840
- 
-m.add_client(
-    location         = 1,
-    delivery         = 20,
-    service_duration = 15,
-    tw_early         = tw_early_min,
-    tw_late          = tw_late_min,
-    name             = "Cliente_1"
-)
-```
- 
-> **Nota:** La matriz de distancias debe ser cuadrada y tanto las filas como las columnas deben seguir el mismo orden. El índice 0 debe corresponder al depósito y los índices siguientes a cada cliente en el mismo orden en que fueron agregados al modelo. Si las filas y columnas no siguen el mismo orden, o si el orden no coincide con el de los clientes en el modelo, las distancias calculadas serán incorrectas.
-</details>
-
-<details>
-<summary> Ejemplo 3 — Crear un cliente sin coordenadas usando x=0, y=0 </summary>
+<summary> Ejemplo 2 — Crear un cliente sin coordenadas usando x=0, y=0 </summary>
 
 Una alternativa más sencilla cuando se trabaja con matriz de distancias es asignar `x=0` e `y=0` a todos los clientes como valores artificiales. De esta forma se cumple con la firma del método sin necesidad de coordenadas reales, y las distancias entre nodos quedan definidas exclusivamente por la matriz que se provee al modelo. Esta opción es útil cuando las distancias reales ya están precalculadas y no se quiere depender de coordenadas geográficas.
  
@@ -2526,33 +2497,7 @@ m.add_depot(
 </details>
 
 <details>
-<summary> Ejemplo 2 — Crear un depósito sin coordenadas x, y </summary>
- 
-Cuando se trabaja con una matriz de distancias, el depósito se identifica por su índice dentro de dicha matriz mediante el parámetro `location`. Siguiendo la convención de PyVRP, el depósito debe corresponder al índice 0 de la matriz.
- 
-```python
-m = Model()
- 
-# Horario del depósito en horas
-tw_early_h = 8    # 8:00
-tw_late_h  = 18   # 18:00
- 
-# Conversión a minutos (PyVRP requiere enteros)
-tw_early_min = tw_early_h * 60   # 480
-tw_late_min  = tw_late_h  * 60   # 1080
- 
-m.add_depot(
-    location         = 0,
-    tw_early         = tw_early_min,
-    tw_late          = tw_late_min,
-    service_duration = 15,
-    name             = "Deposito_Central"
-)
-```
-</details>
-
-<details>
-<summary> Ejemplo 3 — Crear un depósito usando x=0, y=0 </summary>
+<summary> Ejemplo 2 — Crear un depósito usando x=0, y=0 </summary>
   
 Al igual que con los clientes, cuando se dispone de una matriz de distancias precalculada y no se quiere depender de coordenadas geográficas, se pueden usar `x=0` e `y=0` como valores artificiales. En ese caso es obligatorio proveer la matriz de distancias al modelo.
  
